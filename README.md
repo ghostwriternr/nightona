@@ -1,117 +1,82 @@
 # Nightona
 
-A React + TypeScript + Vite application that runs on Cloudflare Workers, integrating with Daytona for secure code execution in persistent sandboxes with Claude Code AI assistance.
+![Lovable at home meme](public/lovable-at-home-meme.jpg)
 
-## Features
+## What is this?
 
-- **Frontend**: React 19 with TypeScript and Vite for fast development
-- **Backend**: Cloudflare Worker handling API requests
-- **AI Integration**: Claude Code CLI for intelligent coding assistance with conversation continuity
-- **Live Preview**: Real-time preview of the React application being built, with changes visible instantly
-- **Persistent Sandboxes**: Daytona SDK for running code in reusable, long-lived sandbox environments
-- **Project Templates**: Automatic React + TypeScript + shadcn/ui template setup with dev server
-- **Multi-turn Conversations**: Maintain context across multiple AI interactions
-- **UI Components**: Tailwind CSS with shadcn/ui components
-- **Full-Stack Deployment**: Single deployment to Cloudflare's edge network
+Nightona brings you the essential Lovable experience - the ability to vibe code React apps with AI while seeing live updates. It's a self-hosted development environment where you can:
 
-## Development
+1. **Chat with Claude Code CLI** - Tell Claude what you want to build using natural language
+2. **See live changes** - Watch your React app update in real-time as Claude writes and modifies code
+3. **Build complete apps** - Start from a template and create full React + TypeScript applications
+4. **Iterate naturally** - Have multi-turn conversations to refine and enhance your application
 
-### Prerequisites
+## Quick Start
 
-- Node.js and npm
-- Cloudflare account and Wrangler CLI
-- Daytona API key
+### 1. Setup
 
-### Setup
-
-1. Install dependencies:
 ```bash
 npm install
-```
 
-2. Create a `.dev.vars` file in the root directory with your API keys:
-```
-DAYTONA_API_KEY=your-actual-daytona-api-key-here
-ANTHROPIC_API_KEY=your-anthropic-api-key-here
-```
+# Add your API keys to .dev.vars
+echo "DAYTONA_API_KEY=your-daytona-key" > .dev.vars
+echo "ANTHROPIC_API_KEY=your-anthropic-key" >> .dev.vars
 
-3. **Create the Claude Code snapshot** (required before starting the service):
-```bash
+# Create the Claude Code environment (one-time setup)
 npm run create-snapshot
-```
-This creates a pre-built Daytona snapshot with Claude Code installed, which is required for the `/api/run-code` endpoint to function.
 
-4. Start the development server:
-```bash
+# Start the app
 npm run dev
 ```
 
-5. **Initialize your first project**: Once the app is running, click "Initialize Project" in the UI to set up a persistent sandbox with the React template.
+### 2. Build your first app
 
-### Available Scripts
+1. Open the app in your browser
+2. Click "Initialize Project" to set up a React template
+3. Start chatting! Try: *"Create a simple todo app with add and delete functionality"*
+4. Watch Claude build your app in the live preview window
 
-- `npm run dev` - Start development server (frontend + worker)
-- `npm run build` - Build the application
-- `npm run lint` - Run ESLint
-- `npm run preview` - Preview built application locally
-- `npm run deploy` - Deploy to Cloudflare Workers
-- `npm run cf-typegen` - Generate Cloudflare types
-- `npm run create-snapshot` - Create Claude Code snapshot (required before first use)
+## Example Conversations
 
-## Usage
+- *"Create a landing page for a coffee shop with a hero section and menu"*
+- *"Add a dark mode toggle to the top right corner"*
+- *"Make the todo items draggable to reorder them"*
+- *"Add a search bar to filter the items"*
+- *"Style this with a modern gradient background"*
 
-### First Time Setup
-1. After starting the development server, navigate to the application in your browser
-2. Click "Initialize Project" to create a persistent sandbox with a React + TypeScript template
-3. Start chatting with Claude Code to build your application
+## How it works
 
-### AI Assistance Features
-- **Persistent Context**: Conversations with Claude Code maintain context across multiple messages
-- **Project Awareness**: Claude Code operates within your initialized React project directory
-- **Live Preview**: See your React application running in real-time as Claude makes changes
-- **Session Management**: Use "Reset Session" to start fresh conversations when needed
-- **Automatic Template**: Projects are initialized with a pre-configured React + TypeScript + shadcn/ui template
-- **Development Server**: Automatic Vite dev server startup with live preview integration
+- **Persistent Development Environment**: Uses Daytona to create secure, long-lived sandbox environments
+- **AI-Powered Coding**: Integrates Claude Code CLI for intelligent code generation and editing
+- **Live Preview**: Runs a Vite dev server in the sandbox with real-time preview
+- **Conversation Continuity**: Maintains context across multiple interactions
+- **Modern Stack**: React + TypeScript + Tailwind CSS + shadcn/ui components
+
+## Requirements
+
+- **Daytona API Key** - Sign up at [daytona.io](https://daytona.io) for cloud development environments
+- **Anthropic API Key** - Get one from [console.anthropic.com](https://console.anthropic.com) for Claude access
+- **Node.js** - For running the development server
 
 ## Deployment
 
-### Environment Variables
-
-For production deployment, set the API keys as secrets:
+Deploy to Cloudflare Workers:
 
 ```bash
-# Set the secrets for production
+# Set production secrets
 wrangler secret put DAYTONA_API_KEY
 wrangler secret put ANTHROPIC_API_KEY
 
-# Create the Claude Code snapshot in production
-npm run create-snapshot
-
-# Deploy the application
+# Deploy
 npm run deploy
 ```
 
-### Architecture
-
-- **Frontend**: React application served as static assets
-- **Backend**: Cloudflare Worker handling `/api/*` endpoints
-- **Persistent Sandboxes**: Daytona sandboxes remain active for extended development sessions
-- **AI Integration**: Claude Code CLI runs within project directory with conversation continuity
-- **Template Management**: Automatic React + TypeScript template cloning and setup
-
-### API Endpoints
-
-- **`/api/initialize`** - Creates persistent sandbox, clones React template, installs dependencies, and starts dev server with live preview
-- **`/api/run-code`** - Executes Claude Code commands with conversation continuity in project context
-- **`/api/status`** - Returns sandbox state, initialization status, dev server URL, and message history
-- **`/api/reset-session`** - Clears Claude Code conversation history while preserving project state and live preview
-
 ## Project Structure
 
-```
-├── src/                    # React frontend
-├── worker/                 # Cloudflare Worker backend
-├── public/                 # Static assets
-├── wrangler.jsonc         # Cloudflare Workers configuration
-└── .dev.vars              # Local environment variables (gitignored)
-```
+- `src/` - React frontend application
+- `worker/` - Cloudflare Worker backend handling AI interactions
+- `scripts/` - Setup scripts for creating the Claude Code environment
+
+---
+
+**Built with**: React, TypeScript, Cloudflare Workers, Daytona, and Claude Code CLI

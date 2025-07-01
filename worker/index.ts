@@ -46,6 +46,7 @@ async function getOrCreateSandbox(
   // Create new sandbox if none exists or previous one failed
   const sandbox = await daytona.create({
     snapshot: CLAUDE_SNAPSHOT_NAME,
+    user: 'claude',  // Use 'claude' user instead of root
     envVars: { ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY },
     public: true  // Make preview links publicly accessible
   });
@@ -92,17 +93,27 @@ export default {
         const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env, sandboxState);
         console.log(`Initialization using sandbox ID: ${sandbox.id}`);
 
-        // Clone the React TypeScript template repository
+        // Check if claude user exists and create if needed
+        console.log('Setting up claude user...');
+        await sandbox.process.executeCommand('id claude || useradd -m -s /bin/bash claude');
+        console.log('Claude user created');
+
+        // Clone the React TypeScript template repository to a shared location
         console.log('Cloning React TypeScript template...');
         await sandbox.git.clone(
           "https://github.com/ghostwriternr/vite_react_shadcn_ts.git",
-          "project"
+          "/tmp/project"
         );
         console.log('Template cloned successfully');
 
+        // Set ownership of the project directory to claude user
+        console.log('Setting project directory ownership...');
+        await sandbox.process.executeCommand('chown -R claude:claude /tmp/project');
+        console.log('Project directory ownership set to claude user');
+
         // Install dependencies
         console.log('Installing dependencies...');
-        await sandbox.process.executeCommand('cd project && npm install');
+        await sandbox.process.executeCommand('cd /tmp/project && npm install');
         console.log('Dependencies installed successfully');
 
         // Start the Vite dev server on port 3000 (in background using session)
@@ -116,7 +127,7 @@ export default {
         const devServerCommand = await sandbox.process.executeSessionCommand(
           devServerSessionId,
           {
-            command: 'cd project && npm run dev -- --host 0.0.0.0 --port 3000',
+            command: 'cd /tmp/project && npm run dev -- --host 0.0.0.0 --port 3000',
             runAsync: true  // This runs the command in the background
           }
         );
@@ -200,8 +211,10 @@ export default {
         await sandboxManager.addMessage(userMessage);
 
         // Run Claude Code CLI with the user's message as a coding task from within the project directory
-        // Use --continue to maintain conversation continuity
-        const claudeCommand = `cd project && claude -p ${JSON.stringify(message)} --continue --output-format json`;
+        // Use --continue to maintain conversation continuity and run as claude user
+        // Use base64 encoding to avoid shell escaping issues entirely
+        const messageBase64 = Buffer.from(message).toString('base64');
+        const claudeCommand = `su claude -c "cd /tmp/project && claude --dangerously-skip-permissions -p \\"\\$(echo '${messageBase64}' | base64 -d)\\" --continue --output-format json"`;
         const response = await sandbox.process.executeCommand(claudeCommand);
 
         // Store the AI response and return it

@@ -4,6 +4,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Sidebar,
   SidebarContent,
+  SidebarInset,
   SidebarProvider,
 } from '@/components/ui/sidebar'
 
@@ -191,7 +192,7 @@ function App() {
   return (
     <SidebarProvider>
       <div className="flex h-screen w-full dark">
-        <Sidebar className="w-80 border-r">
+        <Sidebar className="border-r">
           <SidebarContent className="flex flex-col h-full">
             <div className="p-4 border-b">
               <div className="flex items-center justify-between">
@@ -237,7 +238,7 @@ function App() {
           </SidebarContent>
         </Sidebar>
 
-        <main className="flex-1 flex items-center justify-center bg-background">
+        <SidebarInset className="flex items-center justify-center">
           {isCheckingStatus ? (
             <div className="text-2xl font-semibold text-muted-foreground">
               Checking project status...
@@ -278,7 +279,7 @@ function App() {
               Project Ready
             </div>
           )}
-        </main>
+        </SidebarInset>
       </div>
     </SidebarProvider>
   )

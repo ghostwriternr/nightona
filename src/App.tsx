@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -20,6 +20,13 @@ function App() {
   const [isInitialized, setIsInitialized] = useState(false)
   const [isInitializing, setIsInitializing] = useState(false)
   const [isCheckingStatus, setIsCheckingStatus] = useState(true)
+  const [isSending, setIsSending] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   // Check initialization status on app load
   useEffect(() => {
@@ -87,13 +94,18 @@ function App() {
   }
 
   const handleSend = async () => {
-    if (inputValue.trim()) {
+    if (inputValue.trim() && !isSending) {
+      const messageToSend = inputValue
       const newMessage: Message = {
         id: Date.now().toString(),
-        content: inputValue,
+        content: messageToSend,
         sender: 'user'
       }
+
+      // Clear input immediately and add user message
+      setInputValue('')
       setMessages([...messages, newMessage])
+      setIsSending(true)
 
       try {
         const response = await fetch('/api/run-code', {
@@ -101,7 +113,7 @@ function App() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ message: inputValue }),
+          body: JSON.stringify({ message: messageToSend }),
         })
 
         const data = await response.json()
@@ -119,9 +131,9 @@ function App() {
           sender: 'assistant'
         }
         setMessages(prev => [...prev, errorMessage])
+      } finally {
+        setIsSending(false)
       }
-
-      setInputValue('')
     }
   }
 
@@ -156,7 +168,7 @@ function App() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !isSending) {
       e.preventDefault()
       handleSend()
     }
@@ -195,6 +207,7 @@ function App() {
                   {message.content}
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="p-4 border-t space-y-2">
@@ -205,10 +218,10 @@ function App() {
                 placeholder={isInitialized ? "Type your message..." : "Initialize project first..."}
                 className="resize-none"
                 rows={3}
-                disabled={!isInitialized}
+                disabled={!isInitialized || isSending}
               />
-              <Button onClick={handleSend} className="w-full" disabled={!isInitialized}>
-                Send
+              <Button onClick={handleSend} className="w-full" disabled={!isInitialized || isSending}>
+                {isSending ? 'Working...' : 'Send'}
               </Button>
             </div>
           </SidebarContent>

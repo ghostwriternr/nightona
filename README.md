@@ -7,8 +7,9 @@ A React + TypeScript + Vite application that runs on Cloudflare Workers, integra
 - **Frontend**: React 19 with TypeScript and Vite for fast development
 - **Backend**: Cloudflare Worker handling API requests
 - **AI Integration**: Claude Code CLI for intelligent coding assistance with conversation continuity
+- **Live Preview**: Real-time preview of the React application being built, with changes visible instantly
 - **Persistent Sandboxes**: Daytona SDK for running code in reusable, long-lived sandbox environments
-- **Project Templates**: Automatic React + TypeScript + shadcn/ui template setup
+- **Project Templates**: Automatic React + TypeScript + shadcn/ui template setup with dev server
 - **Multi-turn Conversations**: Maintain context across multiple AI interactions
 - **UI Components**: Tailwind CSS with shadcn/ui components
 - **Full-Stack Deployment**: Single deployment to Cloudflare's edge network
@@ -67,8 +68,10 @@ npm run dev
 ### AI Assistance Features
 - **Persistent Context**: Conversations with Claude Code maintain context across multiple messages
 - **Project Awareness**: Claude Code operates within your initialized React project directory
+- **Live Preview**: See your React application running in real-time as Claude makes changes
 - **Session Management**: Use "Reset Session" to start fresh conversations when needed
 - **Automatic Template**: Projects are initialized with a pre-configured React + TypeScript + shadcn/ui template
+- **Development Server**: Automatic Vite dev server startup with live preview integration
 
 ## Deployment
 
@@ -98,9 +101,10 @@ npm run deploy
 
 ### API Endpoints
 
-- **`/api/initialize`** - Creates persistent sandbox and clones React template repository
+- **`/api/initialize`** - Creates persistent sandbox, clones React template, installs dependencies, and starts dev server with live preview
 - **`/api/run-code`** - Executes Claude Code commands with conversation continuity in project context
-- **`/api/reset-session`** - Clears Claude Code conversation history while preserving project state
+- **`/api/status`** - Returns sandbox state, initialization status, dev server URL, and message history
+- **`/api/reset-session`** - Clears Claude Code conversation history while preserving project state and live preview
 
 ## Project Structure
 

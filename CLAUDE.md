@@ -19,8 +19,9 @@ This is a React + TypeScript + Vite application designed to run on Cloudflare Wo
 ### Backend Structure
 - **Worker Entry**: `worker/index.ts` - Cloudflare Worker handling API requests
 - **API Endpoints**:
-  - `/api/initialize` - Creates persistent Daytona sandbox with React template
+  - `/api/initialize` - Creates persistent Daytona sandbox with React template, installs dependencies, and starts dev server
   - `/api/run-code` - Executes Claude Code commands with conversation continuity
+  - `/api/status` - Returns sandbox state, dev server URL, and message history
   - `/api/reset-session` - Clears Claude conversation history
 - **Sandbox Management**: Persistent Daytona sandboxes with automatic recovery
 - **AI Integration**: Claude Code CLI runs within project directory context
@@ -79,7 +80,9 @@ npm run create-snapshot
 - **Full-Stack Single Deployment**: Both frontend and backend deploy together as a single Cloudflare Worker
 - **Persistent Sandbox Architecture**: Daytona sandboxes remain alive across requests for extended development sessions
 - **AI-Driven Development**: Claude Code CLI integration with conversation continuity for intelligent coding assistance
-- **Project Template System**: Automatic React + TypeScript + shadcn/ui template cloning and setup
+- **Live Preview Integration**: Real-time preview of React applications via Daytona public preview URLs with automatic dev server management
+- **Project Template System**: Automatic React + TypeScript + shadcn/ui template cloning and setup with dev server startup
+- **Session-based Background Processes**: Uses Daytona sessions for long-running processes like dev servers
 - **Asset Handling**: Static assets are served by the worker with SPA fallback configured
 - **API Routing**: Worker uses URL pathname matching to handle API vs static asset requests
 - **Type Safety**: Separate TypeScript configurations ensure proper typing for browser vs worker environments
@@ -88,7 +91,10 @@ npm run create-snapshot
 ## Daytona Integration Details
 
 ### Sandbox Lifecycle
-- **Initialization**: `/api/initialize` creates a persistent sandbox and clones `ghostwriternr/vite_react_shadcn_ts` template
+- **Initialization**: `/api/initialize` creates a persistent sandbox, clones `ghostwriternr/vite_react_shadcn_ts` template, installs dependencies, and starts dev server
+- **Public Access**: Sandboxes are created with `public: true` for direct preview URL access without authentication
+- **Live Preview**: Vite dev server runs on port 3000 with Daytona preview URLs providing real-time application preview
+- **Session Management**: Background processes like dev servers use Daytona sessions with `runAsync: true` for non-blocking execution
 - **Persistence**: Sandboxes are reused across multiple requests to maintain state and conversation context
 - **Recovery**: Automatic sandbox recreation if connection is lost or sandbox becomes unavailable
 - **Working Directory**: All Claude Code commands execute within the `project/` directory in the sandbox
@@ -100,7 +106,8 @@ npm run create-snapshot
 - **Output Format**: Commands use `--output-format json` for structured API responses
 
 ### Sandbox Management Strategy
-- **In-Memory Storage**: Currently uses in-memory storage for sandbox IDs (upgrade to database for production)
+- **Durable Object Storage**: Uses Cloudflare Durable Objects for persistent state including sandbox IDs, dev server URLs, and message history
+- **Live Preview URLs**: Stores Daytona preview URLs for direct iframe embedding in the UI
 - **Smart Recovery**: Attempts to reuse existing sandboxes, creates new ones if needed
 - **Resource Optimization**: Sandboxes can be stopped/started to manage resource consumption
 - **Error Handling**: Comprehensive error handling with automatic failover to new sandboxes

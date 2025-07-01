@@ -47,6 +47,7 @@ async function getOrCreateSandbox(
   const sandbox = await daytona.create({
     snapshot: CLAUDE_SNAPSHOT_NAME,
     envVars: { ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY },
+    public: true  // Make preview links publicly accessible
   });
 
   // Update the Durable Object with the new sandbox ID
@@ -56,9 +57,9 @@ async function getOrCreateSandbox(
   return sandbox;
 }
 
-async function getSandboxManager(env: Env): Promise<SandboxManager> {
+async function getSandboxManager(env: Env) {
   const sandboxManagerId = env.SANDBOX_MANAGER.idFromName('nightona-sandbox-state');
-  return env.SANDBOX_MANAGER.get(sandboxManagerId) as SandboxManager;
+  return env.SANDBOX_MANAGER.get(sandboxManagerId);
 }
 
 export default {
@@ -99,10 +100,46 @@ export default {
         );
         console.log('Template cloned successfully');
 
+        // Install dependencies
+        console.log('Installing dependencies...');
+        await sandbox.process.executeCommand('cd project && npm install');
+        console.log('Dependencies installed successfully');
+
+        // Start the Vite dev server on port 3000 (in background using session)
+        console.log('Starting Vite dev server...');
+
+        // Create a session for long-running processes
+        const devServerSessionId = 'dev-server-session';
+        await sandbox.process.createSession(devServerSessionId);
+
+        // Execute the dev server command asynchronously
+        const devServerCommand = await sandbox.process.executeSessionCommand(
+          devServerSessionId,
+          {
+            command: 'cd project && npm run dev -- --host 0.0.0.0 --port 3000',
+            runAsync: true  // This runs the command in the background
+          }
+        );
+
+        console.log(`Dev server started with command ID: ${devServerCommand.cmdId}`);
+
+        // Wait a moment for the server to start
+        console.log('Waiting for dev server to start...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // Get the preview URL for the dev server
+        console.log('Getting preview URL for dev server...');
+        const previewInfo = await sandbox.getPreviewLink(3000);
+        console.log(`Dev server available at: ${previewInfo.url}`);
+
+        // Store the dev server URL in Durable Object
+        await sandboxManager.setDevServerUrl(previewInfo.url);
+
         return Response.json({
           success: true,
           message: "Project initialized successfully with React + TypeScript template",
-          sandboxId: sandbox.id
+          sandboxId: sandbox.id,
+          devServerUrl: previewInfo.url
         });
       } catch (error) {
         console.error(error);
@@ -171,7 +208,7 @@ export default {
         let aiResponse: string;
         try {
           const claudeResult = JSON.parse(response.result) as SDKMessage;
-          aiResponse = claudeResult.result || response.result;
+          aiResponse = ('result' in claudeResult ? claudeResult.result : '') || response.result;
 
           const aiMessage: Message = {
             id: (Date.now() + 1).toString(),
@@ -240,6 +277,7 @@ export default {
         return Response.json({
           isInitialized: sandboxState.isInitialized,
           sandboxId: sandboxState.sandboxId,
+          devServerUrl: sandboxState.devServerUrl,
           lastAccessedAt: sandboxState.lastAccessedAt,
           messages: sandboxState.messages
         });
@@ -291,6 +329,7 @@ export default {
         }, { status: 500 });
       }
     }
+
 
 		return new Response(null, { status: 404 });
   },

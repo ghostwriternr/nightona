@@ -21,6 +21,7 @@ function App() {
   const [isInitializing, setIsInitializing] = useState(false)
   const [isCheckingStatus, setIsCheckingStatus] = useState(true)
   const [isSending, setIsSending] = useState(false)
+  const [devServerUrl, setDevServerUrl] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when messages change
@@ -37,6 +38,10 @@ function App() {
           const status = await response.json()
           if (status.isInitialized) {
             setIsInitialized(true)
+            // Set dev server URL if available
+            if (status.devServerUrl) {
+              setDevServerUrl(status.devServerUrl)
+            }
             // Restore message history if available
             if (status.messages && status.messages.length > 0) {
               setMessages(status.messages)
@@ -67,6 +72,10 @@ function App() {
 
       if (response.ok) {
         setIsInitialized(true)
+        // Set dev server URL if available
+        if (data.devServerUrl) {
+          setDevServerUrl(data.devServerUrl)
+        }
         const successMessage: Message = {
           id: Date.now().toString(),
           content: 'Project initialized successfully! You can now start coding.',
@@ -148,6 +157,7 @@ function App() {
 
       if (response.ok) {
         setMessages([])
+        setDevServerUrl(null)
       } else {
         const data = await response.json()
         const errorMessage: Message = {
@@ -247,6 +257,21 @@ function App() {
               >
                 {isInitializing ? 'Initializing...' : 'Initialize Project'}
               </Button>
+            </div>
+          ) : devServerUrl ? (
+            <div className="w-full h-full flex flex-col">
+              <div className="p-4 border-b bg-background">
+                <h2 className="text-lg font-semibold text-foreground">Live Preview</h2>
+                <p className="text-sm text-muted-foreground">
+                  Your React app is running live. Changes made by Claude will appear here automatically.
+                </p>
+              </div>
+              <iframe
+                src={devServerUrl}
+                className="flex-1 border-0 w-full"
+                title="Live Preview"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              />
             </div>
           ) : (
             <div className="text-4xl font-bold text-foreground">

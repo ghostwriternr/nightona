@@ -10,6 +10,7 @@ export interface Message {
 export interface SandboxState {
   sandboxId: string | null;
   isInitialized: boolean;
+  devServerUrl: string | null;
   createdAt: number;
   lastAccessedAt: number;
   messages: Message[];
@@ -27,6 +28,7 @@ export class SandboxManager extends DurableObject {
       return {
         sandboxId: null,
         isInitialized: false,
+        devServerUrl: null,
         createdAt: Date.now(),
         lastAccessedAt: Date.now(),
         messages: []
@@ -46,6 +48,7 @@ export class SandboxManager extends DurableObject {
     const state: SandboxState = {
       sandboxId,
       isInitialized: true,
+      devServerUrl: existingState.devServerUrl || null,
       createdAt: existingState.createdAt || now,
       lastAccessedAt: now,
       messages: existingState.messages || []
@@ -58,10 +61,18 @@ export class SandboxManager extends DurableObject {
     await this.ctx.storage.put('sandboxState', {
       sandboxId: null,
       isInitialized: false,
+      devServerUrl: null,
       createdAt: Date.now(),
       lastAccessedAt: Date.now(),
       messages: []
     });
+  }
+
+  async setDevServerUrl(url: string): Promise<void> {
+    const state = await this.getSandboxState();
+    state.devServerUrl = url;
+    state.lastAccessedAt = Date.now();
+    await this.ctx.storage.put('sandboxState', state);
   }
 
   async addMessage(message: Message): Promise<void> {

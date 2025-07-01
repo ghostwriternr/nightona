@@ -17,7 +17,7 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (inputValue.trim()) {
       const newMessage: Message = {
         id: Date.now().toString(),
@@ -25,6 +25,33 @@ function App() {
         sender: 'user'
       }
       setMessages([...messages, newMessage])
+      
+      try {
+        const response = await fetch('/api/run-code', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ message: inputValue }),
+        })
+        
+        const data = await response.json()
+        
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: data.result || data.error || 'No response from sandbox',
+          sender: 'ai'
+        }
+        setMessages(prev => [...prev, aiMessage])
+      } catch {
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: 'Error: Failed to connect to sandbox',
+          sender: 'ai'
+        }
+        setMessages(prev => [...prev, errorMessage])
+      }
+      
       setInputValue('')
     }
   }

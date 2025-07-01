@@ -1,69 +1,76 @@
-# React + TypeScript + Vite
+# Nightona
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React + TypeScript + Vite application that runs on Cloudflare Workers, integrating with Daytona for secure code execution in sandboxes.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Frontend**: React 19 with TypeScript and Vite for fast development
+- **Backend**: Cloudflare Worker handling API requests
+- **Code Execution**: Daytona SDK for running user code in secure sandboxes
+- **UI Components**: Tailwind CSS with shadcn/ui components
+- **Full-Stack Deployment**: Single deployment to Cloudflare's edge network
 
-## Expanding the ESLint configuration
+## Development
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Prerequisites
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- Node.js and npm
+- Cloudflare account and Wrangler CLI
+- Daytona API key
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
+### Setup
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+1. Install dependencies:
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+2. Create a `.dev.vars` file in the root directory with your Daytona API key:
+```
+DAYTONA_API_KEY=your-actual-daytona-api-key-here
+```
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+3. Start the development server:
+```bash
+npm run dev
+```
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Available Scripts
+
+- `npm run dev` - Start development server (frontend + worker)
+- `npm run build` - Build the application
+- `npm run lint` - Run ESLint
+- `npm run preview` - Preview built application locally
+- `npm run deploy` - Deploy to Cloudflare Workers
+- `npm run cf-typegen` - Generate Cloudflare types
+
+## Deployment
+
+### Environment Variables
+
+For production deployment, set the Daytona API key as a secret:
+
+```bash
+# Set the secret for production
+wrangler secret put DAYTONA_API_KEY
+
+# Deploy the application
+npm run deploy
+```
+
+### Architecture
+
+- **Frontend**: React application served as static assets
+- **Backend**: Cloudflare Worker handling `/api/*` endpoints
+- **Integration**: Worker creates Daytona sandboxes to execute user code
+- **Response**: Returns execution results back to the frontend
+
+## Project Structure
+
+```
+├── src/                    # React frontend
+├── worker/                 # Cloudflare Worker backend
+├── public/                 # Static assets
+├── wrangler.jsonc         # Cloudflare Workers configuration
+└── .dev.vars              # Local environment variables (gitignored)
 ```

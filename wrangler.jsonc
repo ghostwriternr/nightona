@@ -28,6 +28,20 @@
 	 */
 
 	/**
+	 * Durable Objects
+	 * https://developers.cloudflare.com/durable-objects/
+	 */
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SANDBOX_MANAGER",
+				"class_name": "SandboxManager",
+				"script_name": "nightona"
+			}
+		]
+	},
+
+	/**
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */

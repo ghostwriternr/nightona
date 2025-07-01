@@ -1,15 +1,21 @@
 import { Daytona } from '@daytonaio/sdk';
 import type { SDKMessage } from '@anthropic-ai/claude-code';
+import { SandboxManager, type SandboxState } from './sandbox-manager';
 
-// In-memory storage for sandbox ID (in production, use a database)
-let activeSandboxId: string | null = null;
+// Export the Durable Object class
+export { SandboxManager };
 
-async function getOrCreateSandbox(daytona: Daytona, CLAUDE_SNAPSHOT_NAME: string, env: { ANTHROPIC_API_KEY: string }) {
+async function getOrCreateSandbox(
+  daytona: Daytona,
+  CLAUDE_SNAPSHOT_NAME: string,
+  env: Env,
+  sandboxState: SandboxState
+) {
   // Try to reuse existing sandbox
-  if (activeSandboxId) {
+  if (sandboxState.sandboxId) {
     try {
-      console.log(`Attempting to find existing sandbox with ID: ${activeSandboxId}`);
-      const sandbox = await daytona.findOne({ id: activeSandboxId });
+      console.log(`Attempting to find existing sandbox with ID: ${sandboxState.sandboxId}`);
+      const sandbox = await daytona.findOne({ id: sandboxState.sandboxId });
       console.log(`Found existing sandbox, current state: ${sandbox.state}`);
 
       // Handle different sandbox states (case-insensitive)
@@ -29,12 +35,11 @@ async function getOrCreateSandbox(daytona: Daytona, CLAUDE_SNAPSHOT_NAME: string
         return sandbox;
       } else {
         console.log(`Sandbox is in unexpected state: ${sandbox.state}, creating new sandbox`);
-        activeSandboxId = null;
+        // Will create new sandbox below
       }
     } catch (error) {
       console.error('Failed to find or start existing sandbox:', error);
       console.log('Creating new sandbox...');
-      activeSandboxId = null;
     }
   }
 
@@ -44,8 +49,16 @@ async function getOrCreateSandbox(daytona: Daytona, CLAUDE_SNAPSHOT_NAME: string
     envVars: { ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY },
   });
 
-  activeSandboxId = sandbox.id;
+  // Update the Durable Object with the new sandbox ID
+  const sandboxManager = await getSandboxManager(env);
+  await sandboxManager.setSandboxState(sandbox.id);
+
   return sandbox;
+}
+
+async function getSandboxManager(env: Env): Promise<SandboxManager> {
+  const sandboxManagerId = env.SANDBOX_MANAGER.idFromName('nightona-sandbox-state');
+  return env.SANDBOX_MANAGER.get(sandboxManagerId) as SandboxManager;
 }
 
 export default {
@@ -54,6 +67,20 @@ export default {
 
     if (url.pathname === "/api/initialize" && request.method === "POST") {
       try {
+        // Get the current sandbox state from Durable Object
+        const sandboxManager = await getSandboxManager(env);
+        const sandboxState = await sandboxManager.getSandboxState();
+
+        // Check if already initialized
+        if (sandboxState.isInitialized && sandboxState.sandboxId) {
+          return Response.json({
+            success: true,
+            message: "Project already initialized",
+            sandboxId: sandboxState.sandboxId,
+            alreadyInitialized: true
+          });
+        }
+
         // Initialize the Daytona client with API key from environment
         const daytona = new Daytona({ apiKey: env.DAYTONA_API_KEY });
 
@@ -61,7 +88,7 @@ export default {
         const CLAUDE_SNAPSHOT_NAME = "claude-code-env:1.0.0";
 
         // Get or create persistent sandbox
-        const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env);
+        const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env, sandboxState);
         console.log(`Initialization using sandbox ID: ${sandbox.id}`);
 
         // Clone the React TypeScript template repository
@@ -71,8 +98,6 @@ export default {
           "project"
         );
         console.log('Template cloned successfully');
-
-        // Don't delete the sandbox - keep it for future requests
 
         return Response.json({
           success: true,
@@ -106,8 +131,12 @@ export default {
           return Response.json({ error: "Message is required" }, { status: 400 });
         }
 
+        // Get the current sandbox state from Durable Object
+        const sandboxManager = await getSandboxManager(env);
+        const sandboxState = await sandboxManager.getSandboxState();
+
         // Check if we have an active sandbox
-        if (!activeSandboxId) {
+        if (!sandboxState.isInitialized || !sandboxState.sandboxId) {
           return Response.json({
             error: "No active project found",
             details: "Please initialize the project first"
@@ -121,15 +150,13 @@ export default {
         const CLAUDE_SNAPSHOT_NAME = "claude-code-env:1.0.0";
 
         // Get the existing sandbox
-        const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env);
+        const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env, sandboxState);
         console.log(`Run-code using sandbox ID: ${sandbox.id}`);
 
         // Run Claude Code CLI with the user's message as a coding task from within the project directory
         // Use --continue to maintain conversation continuity
         const claudeCommand = `cd project && claude -p ${JSON.stringify(message)} --continue --output-format json`;
         const response = await sandbox.process.executeCommand(claudeCommand);
-
-        // Don't delete the sandbox - keep it for future requests
 
         // Return the raw Claude Code JSON response
         try {
@@ -147,8 +174,10 @@ export default {
 
         // Check if it's a sandbox issue
         if (error instanceof Error && error.message.includes("sandbox")) {
-          // Reset sandbox ID so next request creates a new one
-          activeSandboxId = null;
+          // Reset the Durable Object state so next request creates a new sandbox
+          const sandboxManager = await getSandboxManager(env);
+          await sandboxManager.resetSandboxState();
+
           return Response.json({
             error: "Sandbox connection lost",
             details: "Please try again - a new sandbox will be created",
@@ -172,9 +201,33 @@ export default {
       }
     }
 
+    if (url.pathname === "/api/status" && request.method === "GET") {
+      try {
+        // Get the current sandbox state from Durable Object
+        const sandboxManager = await getSandboxManager(env);
+        const sandboxState = await sandboxManager.getSandboxState();
+
+        return Response.json({
+          isInitialized: sandboxState.isInitialized,
+          sandboxId: sandboxState.sandboxId,
+          lastAccessedAt: sandboxState.lastAccessedAt
+        });
+      } catch (error) {
+        console.error(error);
+        return Response.json({
+          error: "Failed to get status",
+          details: error instanceof Error ? error.message : "Unknown error"
+        }, { status: 500 });
+      }
+    }
+
     if (url.pathname === "/api/reset-session" && request.method === "POST") {
       try {
-        if (!activeSandboxId) {
+        // Get the current sandbox state from Durable Object
+        const sandboxManager = await getSandboxManager(env);
+        const sandboxState = await sandboxManager.getSandboxState();
+
+        if (!sandboxState.isInitialized || !sandboxState.sandboxId) {
           return Response.json({
             error: "No active project found",
             details: "Please initialize the project first"
@@ -186,7 +239,7 @@ export default {
         const CLAUDE_SNAPSHOT_NAME = "claude-code-env:1.0.0";
 
         // Get the existing sandbox
-        const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env);
+        const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env, sandboxState);
 
         // Clear the Claude session by changing to project directory and running reset command
         const resetCommand = `cd project && claude --new-session`;
@@ -208,3 +261,10 @@ export default {
 		return new Response(null, { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
+
+// Type definitions for the environment
+interface Env {
+  DAYTONA_API_KEY: string;
+  ANTHROPIC_API_KEY: string;
+  SANDBOX_MANAGER: DurableObjectNamespace<SandboxManager>;
+}

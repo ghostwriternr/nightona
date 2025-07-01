@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -18,6 +18,28 @@ function App() {
   const [inputValue, setInputValue] = useState('')
   const [isInitialized, setIsInitialized] = useState(false)
   const [isInitializing, setIsInitializing] = useState(false)
+  const [isCheckingStatus, setIsCheckingStatus] = useState(true)
+
+  // Check initialization status on app load
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch('/api/status')
+        if (response.ok) {
+          const status = await response.json()
+          if (status.isInitialized) {
+            setIsInitialized(true)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check status:', error)
+      } finally {
+        setIsCheckingStatus(false)
+      }
+    }
+
+    checkStatus()
+  }, [])
 
   const handleInitialize = async () => {
     setIsInitializing(true)
@@ -194,7 +216,11 @@ function App() {
         </Sidebar>
 
         <main className="flex-1 flex items-center justify-center bg-background">
-          {!isInitialized ? (
+          {isCheckingStatus ? (
+            <div className="text-2xl font-semibold text-muted-foreground">
+              Checking project status...
+            </div>
+          ) : !isInitialized ? (
             <div className="flex flex-col items-center space-y-4">
               <div className="text-2xl font-semibold text-muted-foreground">
                 Welcome to Nightona

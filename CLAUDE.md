@@ -72,6 +72,8 @@ npm run create-snapshot
 
 **IMPORTANT**: The development server (`npm run dev`) is always running on the user's side. Never attempt to start it yourself. If you need to check something in the browser or see the current state, ask the user to check it for you.
 
+**CRITICAL**: After making ANY changes to `wrangler.jsonc`, you MUST run `npm run cf-typegen` to regenerate TypeScript types. This includes adding/modifying bindings for Durable Objects, KV, D1, R2, or any other Cloudflare services. Failure to do this will cause TypeScript compilation errors.
+
 ## Key Architectural Patterns
 
 - **Full-Stack Single Deployment**: Both frontend and backend deploy together as a single Cloudflare Worker

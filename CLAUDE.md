@@ -13,7 +13,7 @@ This is a React + TypeScript + Vite application designed to run on Cloudflare Wo
 - **Build Tool**: Vite with SWC for React compilation
 - **Entry Point**: `src/main.tsx` - standard React app entry point
 - **Main Component**: `src/App.tsx` - contains the main application logic
-- **Styling**: CSS modules with `src/App.css` and `src/index.css`
+- **Styling**: Tailwind CSS with shadcn/ui components - all UI should be built exclusively using these tools
 - **Assets**: Static assets in `src/assets/` and `public/`
 
 ### Backend Structure
@@ -69,6 +69,14 @@ npm run cf-typegen
 - **API Routing**: Worker uses URL pathname matching to handle API vs static asset requests
 - **Type Safety**: Separate TypeScript configurations ensure proper typing for browser vs worker environments
 - **Edge Computing**: Application runs on Cloudflare's global edge network for low latency
+
+## UI Development Standards
+
+**CRITICAL**: All UI components must be built using:
+- **Tailwind CSS**: For all styling and layout
+- **shadcn/ui**: For all UI components (buttons, forms, dialogs, etc.)
+- **No custom CSS**: Avoid writing custom CSS files or CSS modules
+- **Component Consistency**: Use shadcn/ui components exclusively for consistent design system
 
 ## Testing and Quality
 

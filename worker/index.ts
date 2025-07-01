@@ -27,7 +27,7 @@ export default {
 
         // Run Claude Code CLI with the user's message as a coding task
         const claudeCommand = `claude -p ${JSON.stringify(message)} --output-format json`;
-        const response = await sandbox.process.codeRun(claudeCommand);
+        const response = await sandbox.process.executeCommand(claudeCommand);
 
         // Clean up
         await sandbox.delete();

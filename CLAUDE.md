@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a React + TypeScript + Vite application designed to run on Cloudflare Workers. The project combines a frontend React application with a backend Cloudflare Worker, creating a full-stack application that deploys to Cloudflare's edge network.
+This is a React + TypeScript + Vite application designed to run on Cloudflare Workers. The project combines a frontend React application with a backend Cloudflare Worker, creating a full-stack application that deploys to Cloudflare's edge network. The application integrates with Daytona for persistent sandbox environments and Claude Code CLI for AI-assisted development with conversation continuity.
 
 ## Architecture
 
@@ -18,7 +18,12 @@ This is a React + TypeScript + Vite application designed to run on Cloudflare Wo
 
 ### Backend Structure
 - **Worker Entry**: `worker/index.ts` - Cloudflare Worker handling API requests
-- **API Pattern**: Worker handles requests to `/api/*` endpoints
+- **API Endpoints**:
+  - `/api/initialize` - Creates persistent Daytona sandbox with React template
+  - `/api/run-code` - Executes Claude Code commands with conversation continuity
+  - `/api/reset-session` - Clears Claude conversation history
+- **Sandbox Management**: Persistent Daytona sandboxes with automatic recovery
+- **AI Integration**: Claude Code CLI runs within project directory context
 - **Response Format**: Returns JSON responses for API calls
 
 ### Configuration Files
@@ -51,6 +56,9 @@ npm run deploy
 
 # Generate Cloudflare types
 npm run cf-typegen
+
+# Create Claude Code snapshot (required for Daytona integration)
+npm run create-snapshot
 ```
 
 ## Development Workflow
@@ -67,10 +75,33 @@ npm run cf-typegen
 ## Key Architectural Patterns
 
 - **Full-Stack Single Deployment**: Both frontend and backend deploy together as a single Cloudflare Worker
+- **Persistent Sandbox Architecture**: Daytona sandboxes remain alive across requests for extended development sessions
+- **AI-Driven Development**: Claude Code CLI integration with conversation continuity for intelligent coding assistance
+- **Project Template System**: Automatic React + TypeScript + shadcn/ui template cloning and setup
 - **Asset Handling**: Static assets are served by the worker with SPA fallback configured
 - **API Routing**: Worker uses URL pathname matching to handle API vs static asset requests
 - **Type Safety**: Separate TypeScript configurations ensure proper typing for browser vs worker environments
 - **Edge Computing**: Application runs on Cloudflare's global edge network for low latency
+
+## Daytona Integration Details
+
+### Sandbox Lifecycle
+- **Initialization**: `/api/initialize` creates a persistent sandbox and clones `ghostwriternr/vite_react_shadcn_ts` template
+- **Persistence**: Sandboxes are reused across multiple requests to maintain state and conversation context
+- **Recovery**: Automatic sandbox recreation if connection is lost or sandbox becomes unavailable
+- **Working Directory**: All Claude Code commands execute within the `project/` directory in the sandbox
+
+### Claude Code Integration
+- **Conversation Continuity**: Uses `claude --continue` flag to maintain multi-turn conversation context
+- **Project Context**: All AI interactions happen within the cloned React project directory
+- **Session Management**: `/api/reset-session` endpoint clears conversation history while preserving project files
+- **Output Format**: Commands use `--output-format json` for structured API responses
+
+### Sandbox Management Strategy
+- **In-Memory Storage**: Currently uses in-memory storage for sandbox IDs (upgrade to database for production)
+- **Smart Recovery**: Attempts to reuse existing sandboxes, creates new ones if needed
+- **Resource Optimization**: Sandboxes can be stopped/started to manage resource consumption
+- **Error Handling**: Comprehensive error handling with automatic failover to new sandboxes
 
 ## UI Development Standards
 

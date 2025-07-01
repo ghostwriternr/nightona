@@ -1,12 +1,15 @@
 # Nightona
 
-A React + TypeScript + Vite application that runs on Cloudflare Workers, integrating with Daytona for secure code execution in sandboxes.
+A React + TypeScript + Vite application that runs on Cloudflare Workers, integrating with Daytona for secure code execution in persistent sandboxes with Claude Code AI assistance.
 
 ## Features
 
 - **Frontend**: React 19 with TypeScript and Vite for fast development
 - **Backend**: Cloudflare Worker handling API requests
-- **Code Execution**: Daytona SDK for running user code in secure sandboxes
+- **AI Integration**: Claude Code CLI for intelligent coding assistance with conversation continuity
+- **Persistent Sandboxes**: Daytona SDK for running code in reusable, long-lived sandbox environments
+- **Project Templates**: Automatic React + TypeScript + shadcn/ui template setup
+- **Multi-turn Conversations**: Maintain context across multiple AI interactions
 - **UI Components**: Tailwind CSS with shadcn/ui components
 - **Full-Stack Deployment**: Single deployment to Cloudflare's edge network
 
@@ -42,6 +45,8 @@ This creates a pre-built Daytona snapshot with Claude Code installed, which is r
 npm run dev
 ```
 
+5. **Initialize your first project**: Once the app is running, click "Initialize Project" in the UI to set up a persistent sandbox with the React template.
+
 ### Available Scripts
 
 - `npm run dev` - Start development server (frontend + worker)
@@ -51,6 +56,19 @@ npm run dev
 - `npm run deploy` - Deploy to Cloudflare Workers
 - `npm run cf-typegen` - Generate Cloudflare types
 - `npm run create-snapshot` - Create Claude Code snapshot (required before first use)
+
+## Usage
+
+### First Time Setup
+1. After starting the development server, navigate to the application in your browser
+2. Click "Initialize Project" to create a persistent sandbox with a React + TypeScript template
+3. Start chatting with Claude Code to build your application
+
+### AI Assistance Features
+- **Persistent Context**: Conversations with Claude Code maintain context across multiple messages
+- **Project Awareness**: Claude Code operates within your initialized React project directory
+- **Session Management**: Use "Reset Session" to start fresh conversations when needed
+- **Automatic Template**: Projects are initialized with a pre-configured React + TypeScript + shadcn/ui template
 
 ## Deployment
 
@@ -74,8 +92,15 @@ npm run deploy
 
 - **Frontend**: React application served as static assets
 - **Backend**: Cloudflare Worker handling `/api/*` endpoints
-- **Integration**: Worker creates Daytona sandboxes to execute user code
-- **Response**: Returns execution results back to the frontend
+- **Persistent Sandboxes**: Daytona sandboxes remain active for extended development sessions
+- **AI Integration**: Claude Code CLI runs within project directory with conversation continuity
+- **Template Management**: Automatic React + TypeScript template cloning and setup
+
+### API Endpoints
+
+- **`/api/initialize`** - Creates persistent sandbox and clones React template repository
+- **`/api/run-code`** - Executes Claude Code commands with conversation continuity in project context
+- **`/api/reset-session`** - Clears Claude Code conversation history while preserving project state
 
 ## Project Structure
 

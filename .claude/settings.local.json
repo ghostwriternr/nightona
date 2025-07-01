@@ -5,7 +5,10 @@
       "Bash(git commit:*)",
       "Bash(npm run build:*)",
       "Bash(npm run lint)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(rg:*)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }

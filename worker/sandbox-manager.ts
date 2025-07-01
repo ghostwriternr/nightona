@@ -1,10 +1,18 @@
 import { DurableObject } from 'cloudflare:workers';
 
+export interface Message {
+  id: string;
+  content: string;
+  sender: 'user' | 'assistant';
+  timestamp: number;
+}
+
 export interface SandboxState {
   sandboxId: string | null;
   isInitialized: boolean;
   createdAt: number;
   lastAccessedAt: number;
+  messages: Message[];
 }
 
 export class SandboxManager extends DurableObject {
@@ -20,7 +28,8 @@ export class SandboxManager extends DurableObject {
         sandboxId: null,
         isInitialized: false,
         createdAt: Date.now(),
-        lastAccessedAt: Date.now()
+        lastAccessedAt: Date.now(),
+        messages: []
       };
     }
 
@@ -33,11 +42,13 @@ export class SandboxManager extends DurableObject {
 
   async setSandboxState(sandboxId: string): Promise<void> {
     const now = Date.now();
+    const existingState = await this.getSandboxState();
     const state: SandboxState = {
       sandboxId,
       isInitialized: true,
-      createdAt: now,
-      lastAccessedAt: now
+      createdAt: existingState.createdAt || now,
+      lastAccessedAt: now,
+      messages: existingState.messages || []
     };
 
     await this.ctx.storage.put('sandboxState', state);
@@ -48,8 +59,23 @@ export class SandboxManager extends DurableObject {
       sandboxId: null,
       isInitialized: false,
       createdAt: Date.now(),
-      lastAccessedAt: Date.now()
+      lastAccessedAt: Date.now(),
+      messages: []
     });
+  }
+
+  async addMessage(message: Message): Promise<void> {
+    const state = await this.getSandboxState();
+    state.messages.push(message);
+    state.lastAccessedAt = Date.now();
+    await this.ctx.storage.put('sandboxState', state);
+  }
+
+  async clearMessages(): Promise<void> {
+    const state = await this.getSandboxState();
+    state.messages = [];
+    state.lastAccessedAt = Date.now();
+    await this.ctx.storage.put('sandboxState', state);
   }
 
   // Handle HTTP requests (required by Durable Object interface)

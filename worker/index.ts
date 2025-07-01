@@ -1,6 +1,6 @@
 import { Daytona } from '@daytonaio/sdk';
 import type { SDKMessage } from '@anthropic-ai/claude-code';
-import { SandboxManager, type SandboxState } from './sandbox-manager';
+import { SandboxManager, type SandboxState, type Message } from './sandbox-manager';
 
 // Export the Durable Object class
 export { SandboxManager };
@@ -153,17 +153,47 @@ export default {
         const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env, sandboxState);
         console.log(`Run-code using sandbox ID: ${sandbox.id}`);
 
+        // Store the user message
+        const userMessage: Message = {
+          id: Date.now().toString(),
+          content: message,
+          sender: 'user',
+          timestamp: Date.now()
+        };
+        await sandboxManager.addMessage(userMessage);
+
         // Run Claude Code CLI with the user's message as a coding task from within the project directory
         // Use --continue to maintain conversation continuity
         const claudeCommand = `cd project && claude -p ${JSON.stringify(message)} --continue --output-format json`;
         const response = await sandbox.process.executeCommand(claudeCommand);
 
-        // Return the raw Claude Code JSON response
+        // Store the AI response and return it
+        let aiResponse: string;
         try {
           const claudeResult = JSON.parse(response.result) as SDKMessage;
+          aiResponse = claudeResult.result || response.result;
+
+          const aiMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            content: aiResponse,
+            sender: 'assistant',
+            timestamp: Date.now()
+          };
+          await sandboxManager.addMessage(aiMessage);
+
           return Response.json(claudeResult);
         } catch {
           // If JSON parsing fails, return raw result as text
+          aiResponse = response.result;
+
+          const aiMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            content: aiResponse,
+            sender: 'assistant',
+            timestamp: Date.now()
+          };
+          await sandboxManager.addMessage(aiMessage);
+
           return Response.json({
             result: response.result,
             warning: "Could not parse Claude Code JSON response"
@@ -210,7 +240,8 @@ export default {
         return Response.json({
           isInitialized: sandboxState.isInitialized,
           sandboxId: sandboxState.sandboxId,
-          lastAccessedAt: sandboxState.lastAccessedAt
+          lastAccessedAt: sandboxState.lastAccessedAt,
+          messages: sandboxState.messages
         });
       } catch (error) {
         console.error(error);
@@ -244,6 +275,9 @@ export default {
         // Clear the Claude session by changing to project directory and running reset command
         const resetCommand = `cd project && claude --new-session`;
         await sandbox.process.executeCommand(resetCommand);
+
+        // Clear the message history
+        await sandboxManager.clearMessages();
 
         return Response.json({
           success: true,

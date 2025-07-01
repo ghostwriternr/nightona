@@ -10,7 +10,8 @@ import {
 interface Message {
   id: string
   content: string
-  sender: 'user' | 'ai'
+  sender: 'user' | 'assistant'
+  timestamp?: number
 }
 
 function App() {
@@ -29,6 +30,10 @@ function App() {
           const status = await response.json()
           if (status.isInitialized) {
             setIsInitialized(true)
+            // Restore message history if available
+            if (status.messages && status.messages.length > 0) {
+              setMessages(status.messages)
+            }
           }
         }
       } catch (error) {
@@ -58,14 +63,14 @@ function App() {
         const successMessage: Message = {
           id: Date.now().toString(),
           content: 'Project initialized successfully! You can now start coding.',
-          sender: 'ai'
+          sender: 'assistant'
         }
         setMessages([successMessage])
       } else {
         const errorMessage: Message = {
           id: Date.now().toString(),
           content: `Initialization failed: ${data.error || 'Unknown error'}`,
-          sender: 'ai'
+          sender: 'assistant'
         }
         setMessages([errorMessage])
       }
@@ -73,7 +78,7 @@ function App() {
       const errorMessage: Message = {
         id: Date.now().toString(),
         content: 'Error: Failed to initialize project',
-        sender: 'ai'
+        sender: 'assistant'
       }
       setMessages([errorMessage])
     } finally {
@@ -104,14 +109,14 @@ function App() {
         const aiMessage: Message = {
           id: (Date.now() + 1).toString(),
           content: data.result || data.error || 'No response from sandbox',
-          sender: 'ai'
+          sender: 'assistant'
         }
         setMessages(prev => [...prev, aiMessage])
       } catch {
         const errorMessage: Message = {
           id: (Date.now() + 1).toString(),
           content: 'Error: Failed to connect to sandbox',
-          sender: 'ai'
+          sender: 'assistant'
         }
         setMessages(prev => [...prev, errorMessage])
       }
@@ -131,18 +136,12 @@ function App() {
 
       if (response.ok) {
         setMessages([])
-        const resetMessage: Message = {
-          id: Date.now().toString(),
-          content: 'Conversation session reset. Starting fresh!',
-          sender: 'ai'
-        }
-        setMessages([resetMessage])
       } else {
         const data = await response.json()
         const errorMessage: Message = {
           id: Date.now().toString(),
           content: `Failed to reset session: ${data.error}`,
-          sender: 'ai'
+          sender: 'assistant'
         }
         setMessages(prev => [...prev, errorMessage])
       }
@@ -150,7 +149,7 @@ function App() {
       const errorMessage: Message = {
         id: Date.now().toString(),
         content: 'Error: Failed to reset session',
-        sender: 'ai'
+        sender: 'assistant'
       }
       setMessages(prev => [...prev, errorMessage])
     }

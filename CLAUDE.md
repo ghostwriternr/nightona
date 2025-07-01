@@ -55,12 +55,14 @@ npm run cf-typegen
 
 ## Development Workflow
 
-1. **Local Development**: Use `npm run dev` to start both the frontend dev server and worker
+1. **Local Development**: The user always runs `npm run dev` independently - NEVER run this command yourself
 2. **Frontend Changes**: Edit files in `src/` - changes hot reload automatically
 3. **Backend Changes**: Edit `worker/index.ts` - worker restarts automatically
 4. **API Integration**: Frontend makes requests to `/api/*` which are handled by the worker
 5. **Build Process**: `npm run build` compiles TypeScript and builds frontend assets
 6. **Deployment**: `npm run deploy` builds and deploys to Cloudflare Workers
+
+**IMPORTANT**: The development server (`npm run dev`) is always running on the user's side. Never attempt to start it yourself. If you need to check something in the browser or see the current state, ask the user to check it for you.
 
 ## Key Architectural Patterns
 
@@ -77,6 +79,26 @@ npm run cf-typegen
 - **shadcn/ui**: For all UI components (buttons, forms, dialogs, etc.)
 - **No custom CSS**: Avoid writing custom CSS files or CSS modules
 - **Component Consistency**: Use shadcn/ui components exclusively for consistent design system
+
+### Color Usage Rules
+**NEVER use hard-coded Tailwind colors** like `bg-red-500`, `text-blue-600`, `border-gray-300`, etc.
+
+**ALWAYS use semantic color variables** defined in the CSS theme:
+- `bg-background`, `text-foreground`
+- `bg-primary`, `text-primary-foreground`
+- `bg-secondary`, `text-secondary-foreground`
+- `bg-muted`, `text-muted-foreground`
+- `bg-accent`, `text-accent-foreground`
+- `bg-card`, `text-card-foreground`
+- `bg-popover`, `text-popover-foreground`
+- `border-border`, `border-input`, `border-muted`
+- `bg-destructive`, `text-destructive-foreground`
+
+This ensures:
+- Consistent theming across the application
+- Easy theme modifications in the future
+- Proper dark/light mode support
+- Maintainable color system
 
 ## Testing and Quality
 

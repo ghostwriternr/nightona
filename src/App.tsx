@@ -42,11 +42,11 @@ function App() {
 
   return (
     <SidebarProvider>
-      <div className="flex h-screen w-full">
+      <div className="flex h-screen w-full dark">
         <Sidebar className="w-80 border-r">
           <SidebarContent className="flex flex-col h-full">
             <div className="p-4 border-b">
-              <h2 className="text-lg font-semibold">Chat</h2>
+              <h2 className="text-lg font-semibold">Nightona</h2>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -55,8 +55,8 @@ function App() {
                   key={message.id}
                   className={`p-3 rounded-lg max-w-[90%] ${
                     message.sender === 'user'
-                      ? 'bg-blue-500 text-white ml-auto'
-                      : 'bg-gray-100 text-gray-900'
+                      ? 'bg-primary text-primary-foreground ml-auto'
+                      : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   {message.content}
@@ -80,8 +80,8 @@ function App() {
           </SidebarContent>
         </Sidebar>
         
-        <main className="flex-1 flex items-center justify-center bg-gray-50">
-          <div className="text-4xl font-bold text-gray-800">
+        <main className="flex-1 flex items-center justify-center bg-background">
+          <div className="text-4xl font-bold text-foreground">
             Hello World
           </div>
         </main>

@@ -25,12 +25,19 @@ A React + TypeScript + Vite application that runs on Cloudflare Workers, integra
 npm install
 ```
 
-2. Create a `.dev.vars` file in the root directory with your Daytona API key:
+2. Create a `.dev.vars` file in the root directory with your API keys:
 ```
 DAYTONA_API_KEY=your-actual-daytona-api-key-here
+ANTHROPIC_API_KEY=your-anthropic-api-key-here
 ```
 
-3. Start the development server:
+3. **Create the Claude Code snapshot** (required before starting the service):
+```bash
+npm run create-snapshot
+```
+This creates a pre-built Daytona snapshot with Claude Code installed, which is required for the `/api/run-code` endpoint to function.
+
+4. Start the development server:
 ```bash
 npm run dev
 ```
@@ -43,16 +50,21 @@ npm run dev
 - `npm run preview` - Preview built application locally
 - `npm run deploy` - Deploy to Cloudflare Workers
 - `npm run cf-typegen` - Generate Cloudflare types
+- `npm run create-snapshot` - Create Claude Code snapshot (required before first use)
 
 ## Deployment
 
 ### Environment Variables
 
-For production deployment, set the Daytona API key as a secret:
+For production deployment, set the API keys as secrets:
 
 ```bash
-# Set the secret for production
+# Set the secrets for production
 wrangler secret put DAYTONA_API_KEY
+wrangler secret put ANTHROPIC_API_KEY
+
+# Create the Claude Code snapshot in production
+npm run create-snapshot
 
 # Deploy the application
 npm run deploy

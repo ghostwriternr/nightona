@@ -7,26 +7,13 @@ import {
   SidebarInset,
   SidebarProvider,
 } from '@/components/ui/sidebar'
-import type {
-  SDKMessage,
-  SDKAssistantMessage,
-  SDKResultMessage
-} from '@anthropic-ai/claude-code'
+import PartySocket from 'partysocket'
 
-// Define the types we need locally since @anthropic-ai/sdk is not available
-interface ContentBlock {
+// WebSocket message types
+interface WebSocketMessage {
   type: string
-  [key: string]: unknown
-}
-
-interface TextBlock extends ContentBlock {
-  type: 'text'
-  text: string
-}
-
-// Type guard to check if a content block is a text block
-function isTextBlock(block: ContentBlock): block is TextBlock {
-  return block.type === 'text'
+  content?: string
+  message?: string
 }
 
 interface Message {
@@ -45,6 +32,7 @@ function App() {
   const [isSending, setIsSending] = useState(false)
   const [devServerUrl, setDevServerUrl] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const wsRef = useRef<PartySocket | null>(null)
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -68,6 +56,9 @@ function App() {
             if (status.messages && status.messages.length > 0) {
               setMessages(status.messages)
             }
+            
+            // Initialize WebSocket connection when project is initialized
+            initializeWebSocket()
           }
         }
       } catch (error) {
@@ -79,6 +70,81 @@ function App() {
 
     checkStatus()
   }, [])
+
+  // Initialize WebSocket connection
+  const initializeWebSocket = () => {
+    if (wsRef.current) {
+      wsRef.current.close()
+    }
+
+    // Create WebSocket connection using partysocket for PartyKit-style routing
+    const ws = new PartySocket({
+      host: window.location.host,
+      party: 'sandbox-manager', // This should match the binding name (lowercased)
+      room: 'nightona-sandbox-state' // This should match the room/session ID we use
+    })
+
+    ws.addEventListener('open', () => {
+      console.log('WebSocket connected')
+    })
+
+    ws.addEventListener('message', (event) => {
+      try {
+        const data: WebSocketMessage = JSON.parse(event.data)
+        handleWebSocketMessage(data)
+      } catch (error) {
+        console.error('Failed to parse WebSocket message:', error)
+      }
+    })
+
+    ws.addEventListener('close', () => {
+      console.log('WebSocket disconnected')
+    })
+
+    ws.addEventListener('error', (error) => {
+      console.error('WebSocket error:', error)
+    })
+
+    wsRef.current = ws
+  }
+
+  // Handle incoming WebSocket messages
+  const handleWebSocketMessage = (data: WebSocketMessage) => {
+    if (data.type === 'claude_response') {
+      const aiMessage: Message = {
+        id: (Date.now() + Math.random()).toString(),
+        content: data.content || 'No response',
+        sender: 'assistant'
+      }
+      setMessages(prev => [...prev, aiMessage])
+    } else if (data.type === 'claude_complete') {
+      // Final response from Claude
+      const aiMessage: Message = {
+        id: (Date.now() + Math.random()).toString(),
+        content: data.content || 'Claude task completed',
+        sender: 'assistant'
+      }
+      setMessages(prev => [...prev, aiMessage])
+      setIsSending(false)
+    } else if (data.type === 'claude_streaming') {
+      // Real-time streaming data from Claude - we could show this incrementally
+      console.log('Streaming data:', data.data)
+    } else if (data.type === 'claude_text') {
+      // Raw text output from Claude
+      console.log('Claude text:', data.content)
+    } else if (data.type === 'user_message_received') {
+      // Acknowledgment that our message was received
+      console.log('Message received by Claude:', data.content)
+    } else if (data.type === 'error') {
+      const errorMessage: Message = {
+        id: (Date.now() + Math.random()).toString(),
+        content: `Error: ${data.message || 'Unknown error'}`,
+        sender: 'assistant'
+      }
+      setMessages(prev => [...prev, errorMessage])
+      setIsSending(false)
+    }
+  }
 
   const handleInitialize = async () => {
     setIsInitializing(true)
@@ -104,6 +170,9 @@ function App() {
           sender: 'assistant'
         }
         setMessages([successMessage])
+        
+        // Initialize WebSocket connection after successful initialization
+        initializeWebSocket()
       } else {
         const errorMessage: Message = {
           id: Date.now().toString(),
@@ -125,7 +194,7 @@ function App() {
   }
 
   const handleSend = async () => {
-    if (inputValue.trim() && !isSending) {
+    if (inputValue.trim() && !isSending && wsRef.current) {
       const messageToSend = inputValue
       const newMessage: Message = {
         id: Date.now().toString(),
@@ -138,111 +207,24 @@ function App() {
       setMessages(prev => [...prev, newMessage])
       setIsSending(true)
 
-      // Create a placeholder assistant message that will be updated with streaming content
-      const assistantMessageId = (Date.now() + 1).toString()
-      const initialAssistantMessage: Message = {
-        id: assistantMessageId,
-        content: '',
-        sender: 'assistant'
-      }
-      setMessages(prev => [...prev, initialAssistantMessage])
-
       try {
-        const response = await fetch('/api/run-code', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: messageToSend }),
-        })
+        // Send message via WebSocket
+        wsRef.current.send(JSON.stringify({
+          type: 'claude_request',
+          message: messageToSend
+        }))
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-
-        const reader = response.body?.getReader()
-        if (!reader) {
-          throw new Error('No response body reader available')
-        }
-
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let assistantContent = ''
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) {
-            break
-          }
-
-          const chunk = decoder.decode(value, { stream: true })
-          buffer += chunk
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || '' // Keep incomplete line in buffer
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data: SDKMessage = JSON.parse(line.slice(6))
-
-                if (data.type === 'assistant') {
-                  const assistantMsg = data as SDKAssistantMessage
-                  // Extract text content from Claude message using proper types
-                  const textBlocks = assistantMsg.message.content?.filter(isTextBlock) || []
-
-                  const textContent = textBlocks.map((block: TextBlock) => block.text).join('')
-
-                  if (textContent) {
-                    assistantContent += textContent
-                    setMessages(prev => prev.map(msg =>
-                      msg.id === assistantMessageId
-                        ? { ...msg, content: assistantContent }
-                        : msg
-                    ))
-                  }
-                } else if (data.type === 'result') {
-                  const resultMsg = data as SDKResultMessage
-                  // Final result message - only use if we haven't received streaming content
-                  if ('result' in resultMsg && resultMsg.result && !assistantContent) {
-                    assistantContent = resultMsg.result
-                    setMessages(prev => prev.map(msg =>
-                      msg.id === assistantMessageId
-                        ? { ...msg, content: assistantContent }
-                        : msg
-                    ))
-                  }
-                } else if (data.type === 'system') {
-                  // System messages (like 'thinking', 'done', etc.)
-                } else if (data.type === 'user') {
-                  // User echo messages
-                } else {
-                  // Other message types
-                }
-              } catch (e) {
-                console.error('Failed to parse streaming message:', e)
-              }
-            }
-          }
-        }
-
-        // If we didn't get any content, show a default message
-        if (!assistantContent) {
-          setMessages(prev => prev.map(msg =>
-            msg.id === assistantMessageId
-              ? { ...msg, content: 'Claude task completed (no text output)' }
-              : msg
-          ))
-        }
+        // The response will be handled by the WebSocket message handler
+        // setIsSending(false) will be called when we receive 'claude_complete' or 'error' messages
 
       } catch (error) {
-        console.error('Streaming error:', error)
-        const errorMessage = `Error: Failed to connect to sandbox - ${error instanceof Error ? error.message : 'Unknown error'}`
-        setMessages(prev => prev.map(msg =>
-          msg.id === assistantMessageId
-            ? { ...msg, content: errorMessage }
-            : msg
-        ))
-      } finally {
+        console.error('WebSocket send error:', error)
+        const errorMessage: Message = {
+          id: (Date.now() + Math.random()).toString(),
+          content: `Error: Failed to send message - ${error instanceof Error ? error.message : 'Unknown error'}`,
+          sender: 'assistant'
+        }
+        setMessages(prev => [...prev, errorMessage])
         setIsSending(false)
       }
     }

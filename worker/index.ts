@@ -1,25 +1,6 @@
 import { Daytona, type Sandbox } from '@daytonaio/sdk';
-import type {
-  SDKMessage,
-  SDKAssistantMessage,
-} from '@anthropic-ai/claude-code';
-
-// Define the types we need locally since @anthropic-ai/sdk is not available
-interface ContentBlock {
-  type: string
-  [key: string]: unknown
-}
-
-interface TextBlock extends ContentBlock {
-  type: 'text'
-  text: string
-}
-
-// Type guard to check if a content block is a text block
-function isTextBlock(block: ContentBlock): block is TextBlock {
-  return block.type === 'text'
-}
-import { SandboxManager, type SandboxState, type Message } from './sandbox-manager';
+import { routePartykitRequest } from 'partyserver';
+import { SandboxManager, type SandboxState } from './sandbox-manager';
 
 // Export the Durable Object class
 export { SandboxManager };
@@ -247,214 +228,6 @@ export default {
       }
     }
 
-    if (url.pathname === "/api/run-code" && request.method === "POST") {
-      try {
-        const { message } = await request.json() as { message: string };
-
-        if (!message) {
-          return Response.json({ error: "Message is required" }, { status: 400 });
-        }
-
-        // Get the current sandbox state from Durable Object
-        const sandboxManager = await getSandboxManager(env);
-        const sandboxState = await sandboxManager.getSandboxState();
-
-        // Check if we have an active sandbox
-        if (!sandboxState.isInitialized || !sandboxState.sandboxId) {
-          return Response.json({
-            error: "No active project found",
-            details: "Please initialize the project first"
-          }, { status: 400 });
-        }
-
-        // Initialize the Daytona client with API key from environment
-        const daytona = new Daytona({ apiKey: env.DAYTONA_API_KEY });
-
-        // Use cached snapshot name
-        const CLAUDE_SNAPSHOT_NAME = "claude-code-env:1.0.0";
-
-        // Get the existing sandbox
-        const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env, sandboxState);
-        console.log(`Run-code using sandbox ID: ${sandbox.id}`);
-
-        // Store the user message
-        const userMessage: Message = {
-          id: Date.now().toString(),
-          content: message,
-          sender: 'user',
-          timestamp: Date.now()
-        };
-        await sandboxManager.addMessage(userMessage);
-
-        // Create a streaming response for real-time Claude output using Daytona log streaming
-        const stream = new ReadableStream({
-          async start(controller) {
-            try {
-              // Create a unique session for this Claude command
-              const sessionId = `claude-session-${Date.now()}`;
-              await sandbox.process.createSession(sessionId);
-
-              // Run Claude Code CLI with streaming JSON output
-              const messageBase64 = btoa(message);
-              
-              // Check if this is the first message (no conversation history)
-              const isFirstMessage = sandboxState.messages.filter(m => m.sender === 'user').length <= 1;
-              const continueFlag = isFirstMessage ? '' : '--continue';
-              
-              const claudeCommand = `su claude -c "cd /tmp/project && echo '${messageBase64}' | base64 -d | claude --dangerously-skip-permissions ${continueFlag} --output-format stream-json --verbose"`;
-
-              // Execute the command asynchronously so we can stream logs
-              const command = await sandbox.process.executeSessionCommand(sessionId, {
-                command: claudeCommand,
-                async: true,
-              });
-
-              let buffer = '';
-              let assistantContent = '';
-
-              // Stream logs in real-time as they're produced with timeout
-              const logStreamingPromise = sandbox.process.getSessionCommandLogs(sessionId, command.cmdId!, (chunk) => {
-                try {
-                  // Clean chunk of null bytes and add to buffer
-                  const cleanChunk = chunk.replace(/\0/g, '');
-                  buffer += cleanChunk;
-
-                  // Process complete lines
-                  const lines = buffer.split('\n');
-                  buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-                  for (const line of lines) {
-                    if (!line.trim()) continue;
-
-                    try {
-                      // Try to parse as JSON first
-                      const claudeMessage: SDKMessage = JSON.parse(line);
-
-                      // Send each message as a server-sent event
-                      const eventData = `data: ${JSON.stringify(claudeMessage)}\n\n`;
-                      controller.enqueue(new TextEncoder().encode(eventData));
-
-                      // Store assistant messages in the sandbox manager
-                      if (claudeMessage.type === 'assistant') {
-                        const assistantMsg = claudeMessage as SDKAssistantMessage;
-                        // Extract text content from Claude message using proper types
-                        const textBlocks = assistantMsg.message.content?.filter(isTextBlock) || [];
-
-                        for (const block of textBlocks) {
-                          assistantContent += block.text;
-                        }
-                      }
-                    } catch {
-                      // If not JSON, treat as raw text output
-                      const fallbackMessage: Partial<SDKAssistantMessage> = {
-                        type: 'assistant',
-                        message: {
-                          id: `fallback-${Date.now()}`,
-                          role: 'assistant',
-                          content: [{ type: 'text', text: line }],
-                          model: 'claude-fallback',
-                          stop_reason: null,
-                          stop_sequence: null,
-                          usage: { input_tokens: 0, output_tokens: 0 }
-                        }
-                      };
-                      const eventData = `data: ${JSON.stringify(fallbackMessage)}\n\n`;
-                      controller.enqueue(new TextEncoder().encode(eventData));
-                      assistantContent += line + '\n';
-                    }
-                  }
-                } catch (error) {
-                  console.error('Error processing log chunk:', error);
-                }
-              });
-
-              // Handle timeout for log streaming
-              const timeoutPromise = new Promise<void>((_, reject) => {
-                setTimeout(() => {
-                  reject(new Error('Claude command timed out after 30 seconds'));
-                }, 30000);
-              });
-
-              try {
-                await Promise.race([logStreamingPromise, timeoutPromise]);
-              } catch (timeoutError) {
-                console.error('Timeout or error in log streaming:', timeoutError);
-                
-                // Send timeout error to frontend
-                const errorMessage = {
-                  type: 'error',
-                  message: `Claude command timed out or failed: ${timeoutError instanceof Error ? timeoutError.message : 'Unknown error'}`
-                };
-                const eventData = `data: ${JSON.stringify(errorMessage)}\n\n`;
-                controller.enqueue(new TextEncoder().encode(eventData));
-              }
-
-              // Store the complete assistant response
-              if (assistantContent.trim()) {
-                const aiMessage: Message = {
-                  id: (Date.now() + Math.random()).toString(),
-                  content: assistantContent.trim(),
-                  sender: 'assistant',
-                  timestamp: Date.now()
-                };
-                await sandboxManager.addMessage(aiMessage);
-              }
-
-              controller.close();
-            } catch (error) {
-              console.error('Streaming error:', error);
-              // Send error message and close stream
-              const errorMessage = {
-                type: 'error',
-                message: error instanceof Error ? error.message : 'Unknown error'
-              };
-              const eventData = `data: ${JSON.stringify(errorMessage)}\n\n`;
-              controller.enqueue(new TextEncoder().encode(eventData));
-              controller.close();
-            }
-          }
-        });
-
-        return new Response(stream, {
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type',
-          }
-        });
-      } catch (error) {
-        console.error(error);
-
-        // Check if it's a sandbox issue
-        if (error instanceof Error && error.message.includes("sandbox")) {
-          // Reset the Durable Object state so next request creates a new sandbox
-          const sandboxManager = await getSandboxManager(env);
-          await sandboxManager.resetSandboxState();
-
-          return Response.json({
-            error: "Sandbox connection lost",
-            details: "Please try again - a new sandbox will be created",
-            originalError: error.message
-          }, { status: 500 });
-        }
-
-        // Check if it's a snapshot not found error
-        if (error instanceof Error && error.message.includes("snapshot")) {
-          return Response.json({
-            error: "Claude Code snapshot not found",
-            details: "Run 'npm run create-snapshot' to create the required snapshot before starting the service",
-            originalError: error.message
-          }, { status: 500 });
-        }
-
-        return Response.json({
-          error: "Failed to run code in sandbox",
-          details: error instanceof Error ? error.message : "Unknown error"
-        }, { status: 500 });
-      }
-    }
 
     if (url.pathname === "/api/status" && request.method === "GET") {
       try {
@@ -551,14 +324,18 @@ export default {
       }
     }
 
-
+    // Try partyserver routing for WebSocket connections
+    const partyResponse = await routePartykitRequest(request, env);
+    if (partyResponse) {
+      return partyResponse;
+    }
 
 		return new Response(null, { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
 
 // Type definitions for the environment
-interface Env {
+interface Env extends Record<string, unknown> {
   DAYTONA_API_KEY: string;
   ANTHROPIC_API_KEY: string;
   SANDBOX_MANAGER: DurableObjectNamespace<SandboxManager>;

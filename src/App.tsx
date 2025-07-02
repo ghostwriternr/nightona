@@ -221,19 +221,38 @@ function App() {
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="p-4 border-t space-y-2">
-              <Textarea
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={isInitialized ? "Type your message..." : "Initialize project first..."}
-                className="resize-none"
-                rows={3}
-                disabled={!isInitialized || isSending}
-              />
-              <Button onClick={handleSend} className="w-full" disabled={!isInitialized || isSending}>
-                {isSending ? 'Working...' : 'Send'}
-              </Button>
+            <div className="p-4 border-t">
+              <div className="flex flex-col gap-2 rounded-2xl border border-border bg-background p-3">
+                <Textarea
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={isInitialized ? "Type your message..." : "Initialize project first..."}
+                  className="resize-none bg-transparent border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[40px] w-full p-0"
+                  rows={1}
+                  disabled={!isInitialized || isSending}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleSend}
+                    size="icon"
+                    disabled={!isInitialized || isSending || !inputValue.trim()}
+                    className="h-6 w-6 rounded-full shrink-0 bg-foreground text-background hover:bg-foreground/90"
+                  >
+                    {isSending ? (
+                      <div className="animate-spin h-3 w-3 border-2 border-background border-t-transparent rounded-full" />
+                    ) : (
+                      <svg 
+                        className="h-3 w-3" 
+                        fill="currentColor" 
+                        viewBox="0 -960 960 960"
+                      >
+                        <path d="M442.39-616.87 309.78-487.26q-11.82 11.83-27.78 11.33t-27.78-12.33q-11.83-11.83-11.83-27.78 0-15.96 11.83-27.79l198.43-199q11.83-11.82 28.35-11.82t28.35 11.82l198.43 199q11.83 11.83 11.83 27.79 0 15.95-11.83 27.78-11.82 11.83-27.78 11.83t-27.78-11.83L521.61-618.87v348.83q0 16.95-11.33 28.28-11.32 11.33-28.28 11.33t-28.28-11.33q-11.33-11.33-11.33-28.28z"/>
+                      </svg>
+                    )}
+                  </Button>
+                </div>
+              </div>
             </div>
           </SidebarContent>
         </Sidebar>

@@ -146,6 +146,7 @@ This ensures:
 - **Type Checking**: TypeScript compilation is part of the build process
 - **Hot Reload**: Vite provides fast HMR for frontend development
 - **Worker Development**: Wrangler provides local worker development with hot reload
+- **Code Quality**: NO eslint-disable directives allowed - fix issues properly with correct TypeScript types and implementations
 
 ## Important Documentation References
 

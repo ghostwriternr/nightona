@@ -1,9 +1,46 @@
-import { Daytona } from '@daytonaio/sdk';
+import { Daytona, type Sandbox } from '@daytonaio/sdk';
 import type { SDKMessage } from '@anthropic-ai/claude-code';
 import { SandboxManager, type SandboxState, type Message } from './sandbox-manager';
 
 // Export the Durable Object class
 export { SandboxManager };
+
+async function ensureDevServerRunning(sandbox: Sandbox) {
+  console.log('Ensuring dev server is running with PM2...');
+
+  try {
+    // Check if PM2 process exists and is running
+    const statusCheck = await sandbox.process.executeCommand('pm2 describe vite-dev-server');
+
+    if (statusCheck.exitCode === 0) {
+      // Process exists, check if it's actually online
+      const listResult = await sandbox.process.executeCommand('pm2 jlist');
+      const processes = JSON.parse(listResult.result);
+      const viteProcess = processes.find((p: any) => p.name === 'vite-dev-server');
+
+      if (viteProcess?.pm2_env?.status === 'online') {
+        console.log('Dev server is already running with PM2');
+        return;
+      } else {
+        console.log(`Dev server process exists but status is: ${viteProcess?.pm2_env?.status}, restarting...`);
+        await sandbox.process.executeCommand('pm2 restart vite-dev-server');
+        console.log('Dev server restarted with PM2');
+        return;
+      }
+    }
+  } catch {
+    console.log('PM2 process check failed, will start new process');
+  }
+
+  // Process doesn't exist, start it
+  console.log('Starting new dev server process with PM2...');
+  await sandbox.process.executeCommand('cd /tmp/project && pm2 start ecosystem.config.cjs');
+  console.log('Dev server started with PM2');
+
+  // Wait a moment for the server to start
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  console.log('Dev server should be running now');
+}
 
 async function getOrCreateSandbox(
   daytona: Daytona,
@@ -22,16 +59,56 @@ async function getOrCreateSandbox(
       const state = sandbox.state?.toUpperCase();
       if (state === 'STARTED') {
         console.log('Sandbox is already running');
-        return sandbox;
+        // Even if sandbox is started, check if dev server is actually running
+        try {
+          console.log('Checking if dev server is responsive...');
+          const previewInfo = await sandbox.getPreviewLink(3000);
+          const healthCheck = await fetch(previewInfo.url, {
+            method: 'HEAD',
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+          });
+          if (healthCheck.ok) {
+            console.log('Dev server is responsive');
+            return sandbox;
+          } else {
+            console.log(`Dev server not responsive (status: ${healthCheck.status}), ensuring it's running...`);
+            await ensureDevServerRunning(sandbox);
+            return sandbox;
+          }
+        } catch (error) {
+          console.log('Dev server health check failed, ensuring it\'s running...');
+          await ensureDevServerRunning(sandbox);
+          return sandbox;
+        }
       } else if (state === 'STOPPED') {
         console.log('Sandbox is stopped, starting it...');
         await sandbox.start();
-        console.log('Sandbox started successfully');
+        console.log('Sandbox started successfully, ensuring dev server is running...');
+        await ensureDevServerRunning(sandbox);
+
+        // Get new preview URL after restart and update Durable Object
+        console.log('Getting fresh preview URL after sandbox restart...');
+        const previewInfo = await sandbox.getPreviewLink(3000);
+        console.log(`New dev server URL: ${previewInfo.url}`);
+        const sandboxManager = await getSandboxManager(env);
+        await sandboxManager.setDevServerUrl(previewInfo.url);
+        console.log('Dev server URL updated in storage');
+
         return sandbox;
       } else if (state === 'ARCHIVED') {
         console.log('Sandbox is archived, starting it (this may take longer)...');
         await sandbox.start();
-        console.log('Archived sandbox started successfully');
+        console.log('Archived sandbox started successfully, ensuring dev server is running...');
+        await ensureDevServerRunning(sandbox);
+
+        // Get new preview URL after restart and update Durable Object
+        console.log('Getting fresh preview URL after sandbox restart...');
+        const previewInfo = await sandbox.getPreviewLink(3000);
+        console.log(`New dev server URL: ${previewInfo.url}`);
+        const sandboxManager = await getSandboxManager(env);
+        await sandboxManager.setDevServerUrl(previewInfo.url);
+        console.log('Dev server URL updated in storage');
+
         return sandbox;
       } else {
         console.log(`Sandbox is in unexpected state: ${sandbox.state}, creating new sandbox`);
@@ -98,41 +175,21 @@ export default {
         await sandbox.process.executeCommand('id claude || useradd -m -s /bin/bash claude');
         console.log('Claude user created');
 
-        // Clone the React TypeScript template repository to a shared location
-        console.log('Cloning React TypeScript template...');
-        await sandbox.git.clone(
-          "https://github.com/ghostwriternr/vite_react_shadcn_ts.git",
-          "/tmp/project"
-        );
-        console.log('Template cloned successfully');
+        // Copy pre-built template from image to project directory
+        console.log('Setting up project from pre-built template...');
+        await sandbox.process.executeCommand('cp -r /workspace/template /tmp/project');
+        console.log('Project template copied successfully');
 
         // Set ownership of the project directory to claude user
         console.log('Setting project directory ownership...');
         await sandbox.process.executeCommand('chown -R claude:claude /tmp/project');
         console.log('Project directory ownership set to claude user');
 
-        // Install dependencies
-        console.log('Installing dependencies...');
-        await sandbox.process.executeCommand('cd /tmp/project && npm install');
-        console.log('Dependencies installed successfully');
-
-        // Start the Vite dev server on port 3000 (in background using session)
-        console.log('Starting Vite dev server...');
-
-        // Create a session for long-running processes
-        const devServerSessionId = 'dev-server-session';
-        await sandbox.process.createSession(devServerSessionId);
-
-        // Execute the dev server command asynchronously
-        const devServerCommand = await sandbox.process.executeSessionCommand(
-          devServerSessionId,
-          {
-            command: 'cd /tmp/project && npm run dev -- --host 0.0.0.0 --port 3000',
-            runAsync: true  // This runs the command in the background
-          }
-        );
-
-        console.log(`Dev server started with command ID: ${devServerCommand.cmdId}`);
+        // Start the Vite dev server with PM2
+        console.log('Starting Vite dev server with PM2...');
+        await sandbox.process.executeCommand('cd /tmp/project && pm2 start ecosystem.config.cjs');
+        await sandbox.process.executeCommand('pm2 save'); // Save PM2 process list
+        console.log('Dev server started with PM2');
 
         // Wait a moment for the server to start
         console.log('Waiting for dev server to start...');
@@ -213,7 +270,7 @@ export default {
         // Run Claude Code CLI with the user's message as a coding task from within the project directory
         // Use --continue to maintain conversation continuity and run as claude user
         // Use base64 encoding to avoid shell escaping issues entirely
-        const messageBase64 = Buffer.from(message).toString('base64');
+        const messageBase64 = btoa(message);
         const claudeCommand = `su claude -c "cd /tmp/project && claude --dangerously-skip-permissions -p \\"\\$(echo '${messageBase64}' | base64 -d)\\" --continue --output-format json"`;
         const response = await sandbox.process.executeCommand(claudeCommand);
 
@@ -287,6 +344,39 @@ export default {
         const sandboxManager = await getSandboxManager(env);
         const sandboxState = await sandboxManager.getSandboxState();
 
+        // If we have a sandbox, check its health and recover if needed
+        if (sandboxState.isInitialized && sandboxState.sandboxId) {
+          try {
+            const daytona = new Daytona({ apiKey: env.DAYTONA_API_KEY });
+            const CLAUDE_SNAPSHOT_NAME = "claude-code-env:1.0.0";
+
+            // This will check sandbox state and restart dev server if needed
+            await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env, sandboxState);
+
+            // Get updated state after potential recovery
+            const updatedState = await sandboxManager.getSandboxState();
+
+            return Response.json({
+              isInitialized: updatedState.isInitialized,
+              sandboxId: updatedState.sandboxId,
+              devServerUrl: updatedState.devServerUrl,
+              lastAccessedAt: updatedState.lastAccessedAt,
+              messages: updatedState.messages
+            });
+          } catch (error) {
+            console.error('Health check failed:', error);
+            // Return cached state if health check fails
+            return Response.json({
+              isInitialized: sandboxState.isInitialized,
+              sandboxId: sandboxState.sandboxId,
+              devServerUrl: sandboxState.devServerUrl,
+              lastAccessedAt: sandboxState.lastAccessedAt,
+              messages: sandboxState.messages,
+              healthCheckFailed: true
+            });
+          }
+        }
+
         return Response.json({
           isInitialized: sandboxState.isInitialized,
           sandboxId: sandboxState.sandboxId,
@@ -342,6 +432,7 @@ export default {
         }, { status: 500 });
       }
     }
+
 
 
 		return new Response(null, { status: 404 });

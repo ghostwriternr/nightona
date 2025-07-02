@@ -9,7 +9,9 @@
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(rg:*)",
       "Bash(mv:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(find:*)"
     ],
     "deny": []
   }

@@ -1,26 +1,7 @@
 import { Server, type Connection } from 'partyserver';
 import { Daytona } from '@daytonaio/sdk';
-
-interface Env extends Record<string, unknown> {
-  DAYTONA_API_KEY: string;
-  ANTHROPIC_API_KEY: string;
-}
-
-export interface Message {
-  id: string;
-  content: string;
-  sender: 'user' | 'assistant';
-  timestamp: number;
-}
-
-export interface SandboxState {
-  sandboxId: string | null;
-  isInitialized: boolean;
-  devServerUrl: string | null;
-  createdAt: number;
-  lastAccessedAt: number;
-  messages: Message[];
-}
+import type { SDKMessage } from '@anthropic-ai/claude-code';
+import type { Message, SandboxState, ClaudeRequest } from './types';
 
 export class SandboxManager extends Server {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -35,7 +16,7 @@ export class SandboxManager extends Server {
   onMessage(connection: Connection, message: string) {
     console.log('Received WebSocket message:', message);
     try {
-      const data = JSON.parse(message);
+      const data: ClaudeRequest = JSON.parse(message);
       if (data.type === 'claude_request') {
         this.handleClaudeRequest(connection, data.message);
       }
@@ -57,7 +38,7 @@ export class SandboxManager extends Server {
     try {
       // Get current state to access sandbox
       const sandboxState = await this.getSandboxState();
-      
+
       if (!sandboxState.isInitialized || !sandboxState.sandboxId) {
         connection.send(JSON.stringify({
           type: 'error',
@@ -97,11 +78,11 @@ export class SandboxManager extends Server {
 
       // Run Claude Code CLI with streaming JSON output
       const messageBase64 = btoa(message);
-      
+
       // Check if this is the first message (no conversation history)
       const isFirstMessage = sandboxState.messages.filter(m => m.sender === 'user').length <= 1;
       const continueFlag = isFirstMessage ? '' : '--continue';
-      
+
       const claudeCommand = `su claude -c "cd /tmp/project && echo '${messageBase64}' | base64 -d | claude --dangerously-skip-permissions ${continueFlag} --output-format stream-json --verbose"`;
 
       // Execute the command asynchronously so we can stream logs
@@ -131,7 +112,7 @@ export class SandboxManager extends Server {
 
             try {
               // Try to parse as JSON first (Claude streaming format)
-              const claudeMessage = JSON.parse(line);
+              const claudeMessage: SDKMessage = JSON.parse(line);
 
               // Send each message as WebSocket message
               connection.send(JSON.stringify({
@@ -149,7 +130,7 @@ export class SandboxManager extends Server {
               }
             } catch {
               // If not JSON, treat as raw text output
-              const textMessage = {
+              const textMessage: { type: string; content: string } = {
                 type: 'claude_text',
                 content: line
               };
@@ -174,7 +155,7 @@ export class SandboxManager extends Server {
         console.log('Daytona log streaming completed');
       } catch (timeoutError) {
         console.error('Timeout or error in log streaming:', timeoutError);
-        
+
         // Send timeout error to frontend
         connection.send(JSON.stringify({
           type: 'error',

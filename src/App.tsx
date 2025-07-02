@@ -8,21 +8,7 @@ import {
   SidebarProvider,
 } from '@/components/ui/sidebar'
 import PartySocket from 'partysocket'
-
-// WebSocket message types
-interface WebSocketMessage {
-  type: string
-  content?: string
-  message?: string
-  data?: unknown
-}
-
-interface Message {
-  id: string
-  content: string
-  sender: 'user' | 'assistant'
-  timestamp?: number
-}
+import type { WebSocketMessage, Message } from '../worker/types'
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -94,7 +80,7 @@ function App() {
             if (status.messages && status.messages.length > 0) {
               setMessages(status.messages)
             }
-            
+
             // Initialize WebSocket connection when project is initialized
             initializeWebSocket()
           }
@@ -171,7 +157,7 @@ function App() {
           sender: 'assistant'
         }
         setMessages([successMessage])
-        
+
         // Initialize WebSocket connection after successful initialization
         initializeWebSocket()
       } else {

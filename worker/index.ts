@@ -1,6 +1,7 @@
 import { Daytona, type Sandbox } from '@daytonaio/sdk';
 import { routePartykitRequest } from 'partyserver';
-import { SandboxManager, type SandboxState } from './sandbox-manager';
+import { SandboxManager } from './sandbox-manager';
+import type { SandboxState } from './types';
 
 // Export the Durable Object class
 export { SandboxManager };
@@ -137,7 +138,7 @@ async function getOrCreateSandbox(
 
 async function getSandboxManager(env: Env) {
   const sandboxManagerId = env.SANDBOX_MANAGER.idFromName('nightona-sandbox-state');
-  return env.SANDBOX_MANAGER.get(sandboxManagerId);
+  return env.SANDBOX_MANAGER.get(sandboxManagerId) as unknown as SandboxManager;
 }
 
 export default {
@@ -325,7 +326,7 @@ export default {
     }
 
     // Try partyserver routing for WebSocket connections
-    const partyResponse = await routePartykitRequest(request, env);
+    const partyResponse = await routePartykitRequest(request, env as unknown as Record<string, unknown>);
     if (partyResponse) {
       return partyResponse;
     }
@@ -333,10 +334,3 @@ export default {
 		return new Response(null, { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
-
-// Type definitions for the environment
-interface Env extends Record<string, unknown> {
-  DAYTONA_API_KEY: string;
-  ANTHROPIC_API_KEY: string;
-  SANDBOX_MANAGER: DurableObjectNamespace<SandboxManager>;
-}

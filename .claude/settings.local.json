@@ -11,7 +11,9 @@
       "Bash(mv:*)",
       "Bash(cp:*)",
       "mcp__ide__getDiagnostics",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:developers.cloudflare.com)"
     ],
     "deny": []
   }

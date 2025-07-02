@@ -1,6 +1,6 @@
 import { Daytona, type Sandbox } from '@daytonaio/sdk';
-import type { SDKMessage } from '@anthropic-ai/claude-code';
-import { SandboxManager, type SandboxState, type Message } from './sandbox-manager';
+import { routePartykitRequest } from 'partyserver';
+import { SandboxManager, type SandboxState } from './sandbox-manager';
 
 // Export the Durable Object class
 export { SandboxManager };
@@ -16,7 +16,7 @@ async function ensureDevServerRunning(sandbox: Sandbox) {
       // Process exists, check if it's actually online
       const listResult = await sandbox.process.executeCommand('pm2 jlist');
       const processes = JSON.parse(listResult.result);
-      const viteProcess = processes.find((p: any) => p.name === 'vite-dev-server');
+      const viteProcess = processes.find((p: { name: string; pm2_env?: { status: string } }) => p.name === 'vite-dev-server');
 
       if (viteProcess?.pm2_env?.status === 'online') {
         console.log('Dev server is already running with PM2');
@@ -75,7 +75,7 @@ async function getOrCreateSandbox(
             await ensureDevServerRunning(sandbox);
             return sandbox;
           }
-        } catch (error) {
+        } catch {
           console.log('Dev server health check failed, ensuring it\'s running...');
           await ensureDevServerRunning(sandbox);
           return sandbox;
@@ -228,115 +228,6 @@ export default {
       }
     }
 
-    if (url.pathname === "/api/run-code" && request.method === "POST") {
-      try {
-        const { message } = await request.json() as { message: string };
-
-        if (!message) {
-          return Response.json({ error: "Message is required" }, { status: 400 });
-        }
-
-        // Get the current sandbox state from Durable Object
-        const sandboxManager = await getSandboxManager(env);
-        const sandboxState = await sandboxManager.getSandboxState();
-
-        // Check if we have an active sandbox
-        if (!sandboxState.isInitialized || !sandboxState.sandboxId) {
-          return Response.json({
-            error: "No active project found",
-            details: "Please initialize the project first"
-          }, { status: 400 });
-        }
-
-        // Initialize the Daytona client with API key from environment
-        const daytona = new Daytona({ apiKey: env.DAYTONA_API_KEY });
-
-        // Use cached snapshot name
-        const CLAUDE_SNAPSHOT_NAME = "claude-code-env:1.0.0";
-
-        // Get the existing sandbox
-        const sandbox = await getOrCreateSandbox(daytona, CLAUDE_SNAPSHOT_NAME, env, sandboxState);
-        console.log(`Run-code using sandbox ID: ${sandbox.id}`);
-
-        // Store the user message
-        const userMessage: Message = {
-          id: Date.now().toString(),
-          content: message,
-          sender: 'user',
-          timestamp: Date.now()
-        };
-        await sandboxManager.addMessage(userMessage);
-
-        // Run Claude Code CLI with the user's message as a coding task from within the project directory
-        // Use --continue to maintain conversation continuity and run as claude user
-        // Use base64 encoding to avoid shell escaping issues entirely
-        const messageBase64 = btoa(message);
-        const claudeCommand = `su claude -c "cd /tmp/project && claude --dangerously-skip-permissions -p \\"\\$(echo '${messageBase64}' | base64 -d)\\" --continue --output-format json"`;
-        const response = await sandbox.process.executeCommand(claudeCommand);
-
-        // Store the AI response and return it
-        let aiResponse: string;
-        try {
-          const claudeResult = JSON.parse(response.result) as SDKMessage;
-          aiResponse = ('result' in claudeResult ? claudeResult.result : '') || response.result;
-
-          const aiMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            content: aiResponse,
-            sender: 'assistant',
-            timestamp: Date.now()
-          };
-          await sandboxManager.addMessage(aiMessage);
-
-          return Response.json(claudeResult);
-        } catch {
-          // If JSON parsing fails, return raw result as text
-          aiResponse = response.result;
-
-          const aiMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            content: aiResponse,
-            sender: 'assistant',
-            timestamp: Date.now()
-          };
-          await sandboxManager.addMessage(aiMessage);
-
-          return Response.json({
-            result: response.result,
-            warning: "Could not parse Claude Code JSON response"
-          });
-        }
-      } catch (error) {
-        console.error(error);
-
-        // Check if it's a sandbox issue
-        if (error instanceof Error && error.message.includes("sandbox")) {
-          // Reset the Durable Object state so next request creates a new sandbox
-          const sandboxManager = await getSandboxManager(env);
-          await sandboxManager.resetSandboxState();
-
-          return Response.json({
-            error: "Sandbox connection lost",
-            details: "Please try again - a new sandbox will be created",
-            originalError: error.message
-          }, { status: 500 });
-        }
-
-        // Check if it's a snapshot not found error
-        if (error instanceof Error && error.message.includes("snapshot")) {
-          return Response.json({
-            error: "Claude Code snapshot not found",
-            details: "Run 'npm run create-snapshot' to create the required snapshot before starting the service",
-            originalError: error.message
-          }, { status: 500 });
-        }
-
-        return Response.json({
-          error: "Failed to run code in sandbox",
-          details: error instanceof Error ? error.message : "Unknown error"
-        }, { status: 500 });
-      }
-    }
 
     if (url.pathname === "/api/status" && request.method === "GET") {
       try {
@@ -433,14 +324,18 @@ export default {
       }
     }
 
-
+    // Try partyserver routing for WebSocket connections
+    const partyResponse = await routePartykitRequest(request, env);
+    if (partyResponse) {
+      return partyResponse;
+    }
 
 		return new Response(null, { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
 
 // Type definitions for the environment
-interface Env {
+interface Env extends Record<string, unknown> {
   DAYTONA_API_KEY: string;
   ANTHROPIC_API_KEY: string;
   SANDBOX_MANAGER: DurableObjectNamespace<SandboxManager>;

@@ -7,6 +7,14 @@ import {
   SidebarInset,
   SidebarProvider,
 } from '@/components/ui/sidebar'
+import PartySocket from 'partysocket'
+
+// WebSocket message types
+interface WebSocketMessage {
+  type: string
+  content?: string
+  message?: string
+}
 
 interface Message {
   id: string
@@ -24,6 +32,7 @@ function App() {
   const [isSending, setIsSending] = useState(false)
   const [devServerUrl, setDevServerUrl] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const wsRef = useRef<PartySocket | null>(null)
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -47,6 +56,9 @@ function App() {
             if (status.messages && status.messages.length > 0) {
               setMessages(status.messages)
             }
+            
+            // Initialize WebSocket connection when project is initialized
+            initializeWebSocket()
           }
         }
       } catch (error) {
@@ -58,6 +70,81 @@ function App() {
 
     checkStatus()
   }, [])
+
+  // Initialize WebSocket connection
+  const initializeWebSocket = () => {
+    if (wsRef.current) {
+      wsRef.current.close()
+    }
+
+    // Create WebSocket connection using partysocket for PartyKit-style routing
+    const ws = new PartySocket({
+      host: window.location.host,
+      party: 'sandbox-manager', // This should match the binding name (lowercased)
+      room: 'nightona-sandbox-state' // This should match the room/session ID we use
+    })
+
+    ws.addEventListener('open', () => {
+      console.log('WebSocket connected')
+    })
+
+    ws.addEventListener('message', (event) => {
+      try {
+        const data: WebSocketMessage = JSON.parse(event.data)
+        handleWebSocketMessage(data)
+      } catch (error) {
+        console.error('Failed to parse WebSocket message:', error)
+      }
+    })
+
+    ws.addEventListener('close', () => {
+      console.log('WebSocket disconnected')
+    })
+
+    ws.addEventListener('error', (error) => {
+      console.error('WebSocket error:', error)
+    })
+
+    wsRef.current = ws
+  }
+
+  // Handle incoming WebSocket messages
+  const handleWebSocketMessage = (data: WebSocketMessage) => {
+    if (data.type === 'claude_response') {
+      const aiMessage: Message = {
+        id: (Date.now() + Math.random()).toString(),
+        content: data.content || 'No response',
+        sender: 'assistant'
+      }
+      setMessages(prev => [...prev, aiMessage])
+    } else if (data.type === 'claude_complete') {
+      // Final response from Claude
+      const aiMessage: Message = {
+        id: (Date.now() + Math.random()).toString(),
+        content: data.content || 'Claude task completed',
+        sender: 'assistant'
+      }
+      setMessages(prev => [...prev, aiMessage])
+      setIsSending(false)
+    } else if (data.type === 'claude_streaming') {
+      // Real-time streaming data from Claude - we could show this incrementally
+      console.log('Streaming data:', data.data)
+    } else if (data.type === 'claude_text') {
+      // Raw text output from Claude
+      console.log('Claude text:', data.content)
+    } else if (data.type === 'user_message_received') {
+      // Acknowledgment that our message was received
+      console.log('Message received by Claude:', data.content)
+    } else if (data.type === 'error') {
+      const errorMessage: Message = {
+        id: (Date.now() + Math.random()).toString(),
+        content: `Error: ${data.message || 'Unknown error'}`,
+        sender: 'assistant'
+      }
+      setMessages(prev => [...prev, errorMessage])
+      setIsSending(false)
+    }
+  }
 
   const handleInitialize = async () => {
     setIsInitializing(true)
@@ -83,6 +170,9 @@ function App() {
           sender: 'assistant'
         }
         setMessages([successMessage])
+        
+        // Initialize WebSocket connection after successful initialization
+        initializeWebSocket()
       } else {
         const errorMessage: Message = {
           id: Date.now().toString(),
@@ -104,7 +194,7 @@ function App() {
   }
 
   const handleSend = async () => {
-    if (inputValue.trim() && !isSending) {
+    if (inputValue.trim() && !isSending && wsRef.current) {
       const messageToSend = inputValue
       const newMessage: Message = {
         id: Date.now().toString(),
@@ -114,34 +204,27 @@ function App() {
 
       // Clear input immediately and add user message
       setInputValue('')
-      setMessages([...messages, newMessage])
+      setMessages(prev => [...prev, newMessage])
       setIsSending(true)
 
       try {
-        const response = await fetch('/api/run-code', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: messageToSend }),
-        })
+        // Send message via WebSocket
+        wsRef.current.send(JSON.stringify({
+          type: 'claude_request',
+          message: messageToSend
+        }))
 
-        const data = await response.json()
+        // The response will be handled by the WebSocket message handler
+        // setIsSending(false) will be called when we receive 'claude_complete' or 'error' messages
 
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: data.result || data.error || 'No response from sandbox',
-          sender: 'assistant'
-        }
-        setMessages(prev => [...prev, aiMessage])
-      } catch {
+      } catch (error) {
+        console.error('WebSocket send error:', error)
         const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: 'Error: Failed to connect to sandbox',
+          id: (Date.now() + Math.random()).toString(),
+          content: `Error: Failed to send message - ${error instanceof Error ? error.message : 'Unknown error'}`,
           sender: 'assistant'
         }
         setMessages(prev => [...prev, errorMessage])
-      } finally {
         setIsSending(false)
       }
     }
@@ -242,9 +325,9 @@ function App() {
                     {isSending ? (
                       <div className="animate-spin h-3 w-3 border-2 border-background border-t-transparent rounded-full" />
                     ) : (
-                      <svg 
-                        className="h-3 w-3" 
-                        fill="currentColor" 
+                      <svg
+                        className="h-3 w-3"
+                        fill="currentColor"
                         viewBox="0 -960 960 960"
                       >
                         <path d="M442.39-616.87 309.78-487.26q-11.82 11.83-27.78 11.33t-27.78-12.33q-11.83-11.83-11.83-27.78 0-15.96 11.83-27.79l198.43-199q11.83-11.82 28.35-11.82t28.35 11.82l198.43 199q11.83 11.83 11.83 27.79 0 15.95-11.83 27.78-11.82 11.83-27.78 11.83t-27.78-11.83L521.61-618.87v348.83q0 16.95-11.33 28.28-11.32 11.33-28.28 11.33t-28.28-11.33q-11.33-11.33-11.33-28.28z"/>

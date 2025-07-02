@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -14,6 +14,7 @@ interface WebSocketMessage {
   type: string
   content?: string
   message?: string
+  data?: unknown
 }
 
 interface Message {
@@ -39,40 +40,8 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Check initialization status on app load
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const response = await fetch('/api/status')
-        if (response.ok) {
-          const status = await response.json()
-          if (status.isInitialized) {
-            setIsInitialized(true)
-            // Set dev server URL if available
-            if (status.devServerUrl) {
-              setDevServerUrl(status.devServerUrl)
-            }
-            // Restore message history if available
-            if (status.messages && status.messages.length > 0) {
-              setMessages(status.messages)
-            }
-            
-            // Initialize WebSocket connection when project is initialized
-            initializeWebSocket()
-          }
-        }
-      } catch (error) {
-        console.error('Failed to check status:', error)
-      } finally {
-        setIsCheckingStatus(false)
-      }
-    }
-
-    checkStatus()
-  }, [])
-
   // Initialize WebSocket connection
-  const initializeWebSocket = () => {
+  const initializeWebSocket = useCallback(() => {
     if (wsRef.current) {
       wsRef.current.close()
     }
@@ -106,7 +75,39 @@ function App() {
     })
 
     wsRef.current = ws
-  }
+  }, [])
+
+  // Check initialization status on app load
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch('/api/status')
+        if (response.ok) {
+          const status = await response.json()
+          if (status.isInitialized) {
+            setIsInitialized(true)
+            // Set dev server URL if available
+            if (status.devServerUrl) {
+              setDevServerUrl(status.devServerUrl)
+            }
+            // Restore message history if available
+            if (status.messages && status.messages.length > 0) {
+              setMessages(status.messages)
+            }
+            
+            // Initialize WebSocket connection when project is initialized
+            initializeWebSocket()
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check status:', error)
+      } finally {
+        setIsCheckingStatus(false)
+      }
+    }
+
+    checkStatus()
+  }, [initializeWebSocket])
 
   // Handle incoming WebSocket messages
   const handleWebSocketMessage = (data: WebSocketMessage) => {

@@ -1,5 +1,10 @@
-import { Server } from 'partyserver';
+import { Server, type Connection } from 'partyserver';
 import { Daytona } from '@daytonaio/sdk';
+
+interface Env extends Record<string, unknown> {
+  DAYTONA_API_KEY: string;
+  ANTHROPIC_API_KEY: string;
+}
 
 export interface Message {
   id: string;
@@ -23,11 +28,11 @@ export class SandboxManager extends Server {
   }
 
   // WebSocket connection handling
-  onConnect(connection: any) {
+  onConnect(connection: Connection) {
     console.log('Claude streaming WebSocket connected:', connection.id);
   }
 
-  onMessage(connection: any, message: string) {
+  onMessage(connection: Connection, message: string) {
     console.log('Received WebSocket message:', message);
     try {
       const data = JSON.parse(message);
@@ -40,15 +45,15 @@ export class SandboxManager extends Server {
     }
   }
 
-  onClose(connection: any) {
+  onClose(connection: Connection) {
     console.log('Claude streaming WebSocket disconnected:', connection.id);
   }
 
-  onError(connection: any, error: any) {
+  onError(connection: Connection, error: Error) {
     console.error('WebSocket error for connection', connection.id, ':', error);
   }
 
-  private async handleClaudeRequest(connection: any, message: string) {
+  private async handleClaudeRequest(connection: Connection, message: string) {
     try {
       // Get current state to access sandbox
       const sandboxState = await this.getSandboxState();
@@ -77,11 +82,13 @@ export class SandboxManager extends Server {
       }));
 
       // Initialize Daytona client and get sandbox
-      if (!this.env.DAYTONA_API_KEY) {
+      const env = this.env as Env;
+      const apiKey = env.DAYTONA_API_KEY;
+      if (!apiKey || typeof apiKey !== 'string') {
         throw new Error('DAYTONA_API_KEY not found in environment');
       }
 
-      const daytona = new Daytona({ apiKey: this.env.DAYTONA_API_KEY });
+      const daytona = new Daytona({ apiKey });
       const sandbox = await daytona.findOne({ id: sandboxState.sandboxId });
 
       // Create a unique session for this Claude command
@@ -270,7 +277,7 @@ export class SandboxManager extends Server {
   }
 
   // Handle HTTP requests - keep existing functionality for non-WebSocket requests
-  async onRequest(_request: Request): Promise<Response> {
+  async onRequest(): Promise<Response> {
     // This method is required but we use direct method calls instead of HTTP requests
     return new Response('SandboxManager Durable Object with WebSocket support is running', { status: 200 });
   }

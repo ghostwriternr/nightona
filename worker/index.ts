@@ -1,5 +1,24 @@
 import { Daytona, type Sandbox } from '@daytonaio/sdk';
-import type { SDKMessage } from '@anthropic-ai/claude-code';
+import type {
+  SDKMessage,
+  SDKAssistantMessage,
+} from '@anthropic-ai/claude-code';
+
+// Define the types we need locally since @anthropic-ai/sdk is not available
+interface ContentBlock {
+  type: string
+  [key: string]: unknown
+}
+
+interface TextBlock extends ContentBlock {
+  type: 'text'
+  text: string
+}
+
+// Type guard to check if a content block is a text block
+function isTextBlock(block: ContentBlock): block is TextBlock {
+  return block.type === 'text'
+}
 import { SandboxManager, type SandboxState, type Message } from './sandbox-manager';
 
 // Export the Durable Object class
@@ -16,7 +35,7 @@ async function ensureDevServerRunning(sandbox: Sandbox) {
       // Process exists, check if it's actually online
       const listResult = await sandbox.process.executeCommand('pm2 jlist');
       const processes = JSON.parse(listResult.result);
-      const viteProcess = processes.find((p: any) => p.name === 'vite-dev-server');
+      const viteProcess = processes.find((p: { name: string; pm2_env?: { status: string } }) => p.name === 'vite-dev-server');
 
       if (viteProcess?.pm2_env?.status === 'online') {
         console.log('Dev server is already running with PM2');
@@ -75,7 +94,7 @@ async function getOrCreateSandbox(
             await ensureDevServerRunning(sandbox);
             return sandbox;
           }
-        } catch (error) {
+        } catch {
           console.log('Dev server health check failed, ensuring it\'s running...');
           await ensureDevServerRunning(sandbox);
           return sandbox;
@@ -267,45 +286,144 @@ export default {
         };
         await sandboxManager.addMessage(userMessage);
 
-        // Run Claude Code CLI with the user's message as a coding task from within the project directory
-        // Use --continue to maintain conversation continuity and run as claude user
-        // Use base64 encoding to avoid shell escaping issues entirely
-        const messageBase64 = btoa(message);
-        const claudeCommand = `su claude -c "cd /tmp/project && claude --dangerously-skip-permissions -p \\"\\$(echo '${messageBase64}' | base64 -d)\\" --continue --output-format json"`;
-        const response = await sandbox.process.executeCommand(claudeCommand);
+        // Create a streaming response for real-time Claude output using Daytona log streaming
+        const stream = new ReadableStream({
+          async start(controller) {
+            try {
+              // Create a unique session for this Claude command
+              const sessionId = `claude-session-${Date.now()}`;
+              await sandbox.process.createSession(sessionId);
 
-        // Store the AI response and return it
-        let aiResponse: string;
-        try {
-          const claudeResult = JSON.parse(response.result) as SDKMessage;
-          aiResponse = ('result' in claudeResult ? claudeResult.result : '') || response.result;
+              // Run Claude Code CLI with streaming JSON output
+              const messageBase64 = btoa(message);
+              
+              // Check if this is the first message (no conversation history)
+              const isFirstMessage = sandboxState.messages.filter(m => m.sender === 'user').length <= 1;
+              const continueFlag = isFirstMessage ? '' : '--continue';
+              
+              const claudeCommand = `su claude -c "cd /tmp/project && echo '${messageBase64}' | base64 -d | claude --dangerously-skip-permissions ${continueFlag} --output-format stream-json --verbose"`;
 
-          const aiMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            content: aiResponse,
-            sender: 'assistant',
-            timestamp: Date.now()
-          };
-          await sandboxManager.addMessage(aiMessage);
+              // Execute the command asynchronously so we can stream logs
+              const command = await sandbox.process.executeSessionCommand(sessionId, {
+                command: claudeCommand,
+                async: true,
+              });
 
-          return Response.json(claudeResult);
-        } catch {
-          // If JSON parsing fails, return raw result as text
-          aiResponse = response.result;
+              let buffer = '';
+              let assistantContent = '';
 
-          const aiMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            content: aiResponse,
-            sender: 'assistant',
-            timestamp: Date.now()
-          };
-          await sandboxManager.addMessage(aiMessage);
+              // Stream logs in real-time as they're produced with timeout
+              const logStreamingPromise = sandbox.process.getSessionCommandLogs(sessionId, command.cmdId!, (chunk) => {
+                try {
+                  // Clean chunk of null bytes and add to buffer
+                  const cleanChunk = chunk.replace(/\0/g, '');
+                  buffer += cleanChunk;
 
-          return Response.json({
-            result: response.result,
-            warning: "Could not parse Claude Code JSON response"
-          });
-        }
+                  // Process complete lines
+                  const lines = buffer.split('\n');
+                  buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                  for (const line of lines) {
+                    if (!line.trim()) continue;
+
+                    try {
+                      // Try to parse as JSON first
+                      const claudeMessage: SDKMessage = JSON.parse(line);
+
+                      // Send each message as a server-sent event
+                      const eventData = `data: ${JSON.stringify(claudeMessage)}\n\n`;
+                      controller.enqueue(new TextEncoder().encode(eventData));
+
+                      // Store assistant messages in the sandbox manager
+                      if (claudeMessage.type === 'assistant') {
+                        const assistantMsg = claudeMessage as SDKAssistantMessage;
+                        // Extract text content from Claude message using proper types
+                        const textBlocks = assistantMsg.message.content?.filter(isTextBlock) || [];
+
+                        for (const block of textBlocks) {
+                          assistantContent += block.text;
+                        }
+                      }
+                    } catch {
+                      // If not JSON, treat as raw text output
+                      const fallbackMessage: Partial<SDKAssistantMessage> = {
+                        type: 'assistant',
+                        message: {
+                          id: `fallback-${Date.now()}`,
+                          role: 'assistant',
+                          content: [{ type: 'text', text: line }],
+                          model: 'claude-fallback',
+                          stop_reason: null,
+                          stop_sequence: null,
+                          usage: { input_tokens: 0, output_tokens: 0 }
+                        }
+                      };
+                      const eventData = `data: ${JSON.stringify(fallbackMessage)}\n\n`;
+                      controller.enqueue(new TextEncoder().encode(eventData));
+                      assistantContent += line + '\n';
+                    }
+                  }
+                } catch (error) {
+                  console.error('Error processing log chunk:', error);
+                }
+              });
+
+              // Handle timeout for log streaming
+              const timeoutPromise = new Promise<void>((_, reject) => {
+                setTimeout(() => {
+                  reject(new Error('Claude command timed out after 30 seconds'));
+                }, 30000);
+              });
+
+              try {
+                await Promise.race([logStreamingPromise, timeoutPromise]);
+              } catch (timeoutError) {
+                console.error('Timeout or error in log streaming:', timeoutError);
+                
+                // Send timeout error to frontend
+                const errorMessage = {
+                  type: 'error',
+                  message: `Claude command timed out or failed: ${timeoutError instanceof Error ? timeoutError.message : 'Unknown error'}`
+                };
+                const eventData = `data: ${JSON.stringify(errorMessage)}\n\n`;
+                controller.enqueue(new TextEncoder().encode(eventData));
+              }
+
+              // Store the complete assistant response
+              if (assistantContent.trim()) {
+                const aiMessage: Message = {
+                  id: (Date.now() + Math.random()).toString(),
+                  content: assistantContent.trim(),
+                  sender: 'assistant',
+                  timestamp: Date.now()
+                };
+                await sandboxManager.addMessage(aiMessage);
+              }
+
+              controller.close();
+            } catch (error) {
+              console.error('Streaming error:', error);
+              // Send error message and close stream
+              const errorMessage = {
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Unknown error'
+              };
+              const eventData = `data: ${JSON.stringify(errorMessage)}\n\n`;
+              controller.enqueue(new TextEncoder().encode(eventData));
+              controller.close();
+            }
+          }
+        });
+
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          }
+        });
       } catch (error) {
         console.error(error);
 

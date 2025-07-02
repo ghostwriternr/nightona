@@ -7,6 +7,27 @@ import {
   SidebarInset,
   SidebarProvider,
 } from '@/components/ui/sidebar'
+import type {
+  SDKMessage,
+  SDKAssistantMessage,
+  SDKResultMessage
+} from '@anthropic-ai/claude-code'
+
+// Define the types we need locally since @anthropic-ai/sdk is not available
+interface ContentBlock {
+  type: string
+  [key: string]: unknown
+}
+
+interface TextBlock extends ContentBlock {
+  type: 'text'
+  text: string
+}
+
+// Type guard to check if a content block is a text block
+function isTextBlock(block: ContentBlock): block is TextBlock {
+  return block.type === 'text'
+}
 
 interface Message {
   id: string
@@ -114,8 +135,17 @@ function App() {
 
       // Clear input immediately and add user message
       setInputValue('')
-      setMessages([...messages, newMessage])
+      setMessages(prev => [...prev, newMessage])
       setIsSending(true)
+
+      // Create a placeholder assistant message that will be updated with streaming content
+      const assistantMessageId = (Date.now() + 1).toString()
+      const initialAssistantMessage: Message = {
+        id: assistantMessageId,
+        content: '',
+        sender: 'assistant'
+      }
+      setMessages(prev => [...prev, initialAssistantMessage])
 
       try {
         const response = await fetch('/api/run-code', {
@@ -126,21 +156,92 @@ function App() {
           body: JSON.stringify({ message: messageToSend }),
         })
 
-        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
 
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: data.result || data.error || 'No response from sandbox',
-          sender: 'assistant'
+        const reader = response.body?.getReader()
+        if (!reader) {
+          throw new Error('No response body reader available')
         }
-        setMessages(prev => [...prev, aiMessage])
-      } catch {
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: 'Error: Failed to connect to sandbox',
-          sender: 'assistant'
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let assistantContent = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            break
+          }
+
+          const chunk = decoder.decode(value, { stream: true })
+          buffer += chunk
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || '' // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data: SDKMessage = JSON.parse(line.slice(6))
+
+                if (data.type === 'assistant') {
+                  const assistantMsg = data as SDKAssistantMessage
+                  // Extract text content from Claude message using proper types
+                  const textBlocks = assistantMsg.message.content?.filter(isTextBlock) || []
+
+                  const textContent = textBlocks.map((block: TextBlock) => block.text).join('')
+
+                  if (textContent) {
+                    assistantContent += textContent
+                    setMessages(prev => prev.map(msg =>
+                      msg.id === assistantMessageId
+                        ? { ...msg, content: assistantContent }
+                        : msg
+                    ))
+                  }
+                } else if (data.type === 'result') {
+                  const resultMsg = data as SDKResultMessage
+                  // Final result message - only use if we haven't received streaming content
+                  if ('result' in resultMsg && resultMsg.result && !assistantContent) {
+                    assistantContent = resultMsg.result
+                    setMessages(prev => prev.map(msg =>
+                      msg.id === assistantMessageId
+                        ? { ...msg, content: assistantContent }
+                        : msg
+                    ))
+                  }
+                } else if (data.type === 'system') {
+                  // System messages (like 'thinking', 'done', etc.)
+                } else if (data.type === 'user') {
+                  // User echo messages
+                } else {
+                  // Other message types
+                }
+              } catch (e) {
+                console.error('Failed to parse streaming message:', e)
+              }
+            }
+          }
         }
-        setMessages(prev => [...prev, errorMessage])
+
+        // If we didn't get any content, show a default message
+        if (!assistantContent) {
+          setMessages(prev => prev.map(msg =>
+            msg.id === assistantMessageId
+              ? { ...msg, content: 'Claude task completed (no text output)' }
+              : msg
+          ))
+        }
+
+      } catch (error) {
+        console.error('Streaming error:', error)
+        const errorMessage = `Error: Failed to connect to sandbox - ${error instanceof Error ? error.message : 'Unknown error'}`
+        setMessages(prev => prev.map(msg =>
+          msg.id === assistantMessageId
+            ? { ...msg, content: errorMessage }
+            : msg
+        ))
       } finally {
         setIsSending(false)
       }
@@ -242,9 +343,9 @@ function App() {
                     {isSending ? (
                       <div className="animate-spin h-3 w-3 border-2 border-background border-t-transparent rounded-full" />
                     ) : (
-                      <svg 
-                        className="h-3 w-3" 
-                        fill="currentColor" 
+                      <svg
+                        className="h-3 w-3"
+                        fill="currentColor"
                         viewBox="0 -960 960 960"
                       >
                         <path d="M442.39-616.87 309.78-487.26q-11.82 11.83-27.78 11.33t-27.78-12.33q-11.83-11.83-11.83-27.78 0-15.96 11.83-27.79l198.43-199q11.83-11.82 28.35-11.82t28.35 11.82l198.43 199q11.83 11.83 11.83 27.79 0 15.95-11.83 27.78-11.82 11.83-27.78 11.83t-27.78-11.83L521.61-618.87v348.83q0 16.95-11.33 28.28-11.32 11.33-28.28 11.33t-28.28-11.33q-11.33-11.33-11.33-28.28z"/>
